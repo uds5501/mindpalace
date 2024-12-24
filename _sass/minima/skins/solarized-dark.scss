@@ -3,3 +3,10 @@
 $sol-is-auto: false;
 $sol-is-dark: true;
 @import "minima/skins/solarized";
+
+:root {
+  --tag-bg-color: rgba(255, 255, 255, 0.1);
+  --tag-color: #93a1a1;  // Using solarized base1 color
+  --tag-bg-hover-color: #073642;  // Using solarized base02 color
+  --tag-hover-color: #eee8d5;  // Using solarized base2 color
+}

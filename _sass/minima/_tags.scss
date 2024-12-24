@@ -1,0 +1,41 @@
+.post-tags {
+  .post-tag {
+    display: inline-block;
+    padding: 0.2em 0.5em;
+    margin: 0 0.3em;
+    border-radius: 3px;
+    background-color: var(--tag-bg-color, rgba(255, 255, 255, 0.1));
+    color: var(--tag-color, inherit);
+    font-size: 0.85em;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    
+    &:hover {
+      background-color: var(--tag-bg-hover-color, rgba(0, 0, 0, 0.2));
+      color: var(--tag-hover-color, #fff);
+      text-decoration: none;
+    }
+  }
+  .post-tag:first-child {
+    margin-left: 0;
+  }
+}
+
+.tag-page {
+  .tag-title {
+    margin-bottom: 1em;
+    color: var(--tag-color);
+  }
+  
+  .tag-group {
+    display: inline-block;
+    margin: 0.5em 1em 0.5em 0;
+    
+    .tag-count {
+      color: var(--tag-color);
+      font-size: 0.85em;
+      margin-left: 0.3em;
+    }
+  }
+}

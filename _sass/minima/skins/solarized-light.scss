@@ -1,4 +1,12 @@
 @charset "utf-8";
 
 $sol-is-auto: false;
+$sol-is-dark: false;
 @import "minima/skins/solarized";
+
+:root {
+  --tag-bg-color: rgba(147, 161, 161, 0.1);  // base1 with opacity
+  --tag-color: #657b83;  // solarized base00
+  --tag-bg-hover-color: #93a1a1;  // solarized base1
+  --tag-hover-color: #fdf6e3;  // solarized base3
+}
