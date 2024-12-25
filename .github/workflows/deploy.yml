@@ -1,9 +1,9 @@
-name: Build and Deploy Jekyll Site
+name: Build and Deploy Jekyll Site to Master
 
 on:
   push:
     branches:
-      - master  # Trigger on pushes to the main branch
+      - master  # Trigger on pushes to the master branch
 
 jobs:
   build-deploy:
@@ -18,8 +18,8 @@ jobs:
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: '3.3.0'  # Specify your Ruby version
-        bundler-cache: true  # Cache installed gems for faster builds
+        ruby-version: '3.3.0'
+        bundler-cache: true
 
     # 3. Install dependencies
     - name: Install Dependencies
@@ -29,9 +29,19 @@ jobs:
     - name: Build Jekyll Site
       run: bundle exec jekyll build
 
-    # 5. Deploy to GitHub Pages
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./_site
+    # 5. Deploy built site to master
+    - name: Deploy Built Site
+      run: |
+        rm -rf ./* .[^.] .??*  # Remove everything except .git and .github/workflows
+        mv _site/* ./          # Move the built site to the root directory
+        touch .nojekyll        # Disable Jekyll processing on GitHub Pages
+      env:
+        GIT_COMMITTER_NAME: github-actions[bot]
+        GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+    - name: Commit and Push Changes
+      run: |
+        git add --all
+        git commit -m "Deploy built site [skip ci]" || echo "No changes to commit"
+        git push origin master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
