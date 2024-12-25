@@ -34,7 +34,6 @@ jobs:
     # 5. Deploy built site to master
     - name: Deploy Built Site
       run: |
-        rm -rf ./* .[^.] .??*  # Remove everything except .git and .github/workflows
         mv _site/* ./          # Move the built site to the root directory
         touch .nojekyll        # Disable Jekyll processing on GitHub Pages
       env:
