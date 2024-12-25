@@ -1,4 +1,6 @@
 title: Uddeshya's Musings
+baseurl: "/mindpalace" # the subpath of your site
+url: "https://uds5501.github.io" # the base hostname & protocol
 author:
   name: Uddeshya Singh
   email: singhuddeshyaofficial@gmail.com
