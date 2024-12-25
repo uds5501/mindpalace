@@ -22,6 +22,7 @@ plugins:
   - jekyll-feed
   - jekyll-seo-tag
   - jekyll-twitter-plugin
+  - jekyll-gist
 
 # Theme-specific settings
 
@@ -47,6 +48,7 @@ minima:
   social_links:
     - { platform: github,  user_url: "https://github.com/uds5501" }
     - { platform: twitter, user_url: "https://twitter.com/uds5501" }
+    - { platform: linkedin, user_url: "https://www.linkedin.com/in/singhuddeshya5501/" }
   author:
     name: Uddeshya Singh
     email: singhuddeshyaofficial@gmail.com
