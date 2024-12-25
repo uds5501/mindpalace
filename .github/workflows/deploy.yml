@@ -34,7 +34,7 @@ jobs:
     # 5. Deploy built site to master
     - name: Deploy Built Site
       run: |
-        find . -mindepth 1 -not -name '_site' -not -name '.git' -not -name '.github' -exec rm -rf {} +
+        find . -mindepth 1 -not -name '_site' -not -name '.git' -not -name '.github' -ignore_readdir_race -exec rm -rf {} +
         mv _site/* ./          # Move the built site to the root directory
         touch .nojekyll        # Disable Jekyll processing on GitHub Pages
       env:
