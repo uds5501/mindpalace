@@ -3,40 +3,41 @@ name: Build and Deploy Jekyll Site
 on:
   push:
     branches:
-      - master  # Trigger on pushes to the master branch
+      - master
 
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-    # 1. Checkout the repository
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    # 2. Set up Ruby environment
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: '3.3.0'
         bundler-cache: true
 
-    # 3. Install dependencies
     - name: Install Dependencies
-      run: bundle install
+      run: |
+        bundle install
+        bundle update
 
-    # 4. Build the Jekyll site
     - name: Build Jekyll Site
-      run: bundle exec jekyll build --trace --verbose
+      run: |
+        bundle exec jekyll build --trace
+      env:
+        JEKYLL_ENV: production
 
-    # 5. Deploy to gh-pages branch
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./_site
-        publish_branch: gh-pages  # Deploy to gh-pages branch
-        force_orphan: true       # Create a new orphan branch each time
+        publish_branch: gh-pages
+        force_orphan: true
         user_name: 'github-actions[bot]'
         user_email: 'github-actions[bot]@users.noreply.github.com'
-        commit_message: 'Deploy Jekyll site [skip ci]'
+        commit_message: 'Deploy Jekyll site with Minima theme [skip ci]'
+        enable_jekyll: true
