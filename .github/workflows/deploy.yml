@@ -1,4 +1,4 @@
-name: Build and Deploy Jekyll Site to Master
+name: Build and Deploy Jekyll Site
 
 on:
   push:
@@ -25,25 +25,18 @@ jobs:
     - name: Install Dependencies
       run: bundle install
 
-    # 4. Build the Jekyll site with debugging
+    # 4. Build the Jekyll site
     - name: Build Jekyll Site
-      run: |
-        bundle exec jekyll build --trace --verbose
-        ls -al _site  # List contents of the _site directory
+      run: bundle exec jekyll build --trace --verbose
 
-    # 5. Deploy built site to master
-    - name: Deploy Built Site
-      run: |
-        find . -mindepth 1 -not -name '_site' -not -name '.git' -not -name '.github' -ignore_readdir_race -exec rm -rf {} +
-        mv _site/* ./          # Move the built site to the root directory
-        touch .nojekyll        # Disable Jekyll processing on GitHub Pages
-      env:
-        GIT_COMMITTER_NAME: github-actions[bot]
-        GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
-    - name: Commit and Push Changes
-      run: |
-        git add --all
-        git commit -m "Deploy built site [skip ci]" || echo "No changes to commit"
-        git push origin master
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # 5. Deploy to gh-pages branch
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./_site
+        publish_branch: gh-pages  # Deploy to gh-pages branch
+        force_orphan: true       # Create a new orphan branch each time
+        user_name: 'github-actions[bot]'
+        user_email: 'github-actions[bot]@users.noreply.github.com'
+        commit_message: 'Deploy Jekyll site [skip ci]'
