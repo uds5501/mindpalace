@@ -3,8 +3,7 @@ layout: page
 title: About
 permalink: /about/
 ---
-
-<img src="/assets/images/about/uddeshya.png" alt="Uddeshya Singh" style="width: 150px; height: 150px;">
+<img src="{{ site.baseurl }}/assets/images/about/uddeshya.png" alt="Uddeshya Singh" style="max-width: 150px; height: auto;">
 
 Hey, thanks for stopping by!
 
