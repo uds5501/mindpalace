@@ -1,2 +1,78 @@
 // Placeholder to allow defining custom styles that override everything else.
 // (Use `_sass/minima/custom-variables.scss` to override variable defaults)
+
+// Increase base font size
+html {
+  font-size: 18px;
+}
+
+.post-content {
+  font-size: 18px;
+  line-height: 1.6;
+  
+  p, ul, ol {
+    font-size: 18px;
+  }
+  
+  h1 { font-size: 2.2em; }
+  h2 { font-size: 1.8em; }
+  h3 { font-size: 1.4em; }
+  h4 { font-size: 1.2em; }
+}
+
+.site-title {
+  font-size: 1.625rem;
+}
+
+.site-nav {
+  font-size: 1.125rem;
+}
+
+pre,
+code {
+  font-size: 0.9375em;
+}
+
+.post-meta {
+  font-size: 1rem;
+}
+
+.link-preview {
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 15px 0;
+    background-color: #1c1c1c;
+    transition: box-shadow 0.2s ease;
+    
+    &:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        background-color: #1e1e1e;
+    }
+    
+    a {
+        text-decoration: none;
+        color: inherit;
+        
+        &:hover {
+            text-decoration: none;
+        }
+    }
+    
+    h4 {
+        margin: 0 0 8px 0;
+        font-size: 1.1em;
+        color: #d4d4d4;
+    }
+    
+    p {
+        color: #b0b0b0;
+        margin: 0 0 8px 0;
+        font-size: 0.9em;
+    }
+    
+    .domain {
+        color: #808080;
+        font-size: 0.8em;
+    }
+}

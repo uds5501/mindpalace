@@ -1,0 +1,7 @@
+<div class="link-preview">
+    <a href="{{ include.url }}" target="_blank">
+        <h4>{{ include.title }}</h4>
+        <p>{{ include.description }}</p>
+        <span class="domain">{{ include.domain | default: include.url }}</span>
+    </a>
+</div> 

@@ -2,7 +2,7 @@
 layout: post
 title: "Mathematical Intuition of Phi φ Accrual Failure Detection"
 date: 2024-04-24
-tags: distributed-systems mathematics failure-detection
+tags: distributed-systems statistics failure-detection
 ---
 
 This post is migrated version of the one already published on [Medium](https://singhuddeshyaofficial.medium.com/mathematical-intuition-of-phi-%CF%86-accrual-failure-detection-111d9c898011 "@embed").
