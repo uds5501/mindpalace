@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang=" en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Porting Postgres histograms to MySQL (MariaDB): Part 2 | Uddeshya’s Musings</title>
+<meta name="generator" content="Jekyll v4.3.4" />
+<meta property="og:title" content="Porting Postgres histograms to MySQL (MariaDB): Part 2" />
+<meta name="author" content="Uddeshya Singh" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Welcome to part 2 of the series, in this post, we’ll discuss implementing a new histogram style inspired by Postgres in MySQL for estimating row selectivity." />
+<meta property="og:description" content="Welcome to part 2 of the series, in this post, we’ll discuss implementing a new histogram style inspired by Postgres in MySQL for estimating row selectivity." />
+<meta property="og:site_name" content="Uddeshya’s Musings" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2024-01-09T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Porting Postgres histograms to MySQL (MariaDB): Part 2" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Uddeshya Singh"},"dateModified":"2024-01-09T00:00:00+00:00","datePublished":"2024-01-09T00:00:00+00:00","description":"Welcome to part 2 of the series, in this post, we’ll discuss implementing a new histogram style inspired by Postgres in MySQL for estimating row selectivity.","headline":"Porting Postgres histograms to MySQL (MariaDB): Part 2","mainEntityOfPage":{"@type":"WebPage","@id":"/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2.html"},"url":"/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Uddeshya&apos;s Musings" />
+</head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Uddeshya&#39;s Musings</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Porting Postgres histograms to MySQL (MariaDB): Part 2</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2024-01-09T00:00:00+00:00" itemprop="datePublished">
+        Jan 9, 2024
+      </time><div class="post-tags"><a href="/tags/#databases" class="post-tag">#databases</a><a href="/tags/#mysql" class="post-tag">#mysql</a><a href="/tags/#query-optimization" class="post-tag">#query-optimization</a><a href="/tags/#statistics" class="post-tag">#statistics</a><a href="/tags/#postgres" class="post-tag">#postgres</a></div></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Welcome to part 2 of the series, in this post, we’ll discuss implementing a new histogram style inspired by Postgres in MySQL for estimating row selectivity.</p>
+
+<p>By now I am assuming you have understood what is <em>selectivity</em> and its significance. If not, I’d recommend you to read <a href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1.html">part 1</a> for this post to make sense.</p>
+
+<h1 id="tldr-">TLDR 🏃</h1>
+
+<p>In the last post, you noticed how postgres utilizes bounds to create its histogram implementation. I decided to utilize the same idea with a small twist to implement a new histogram style in MySQL called <strong>RANGE_HB (</strong>to be fair, I could’ve thought of a better name but I was half asleep and caffeinated through most of this hack week xD). You can check out the implementation in this branch:</p>
+
+<div class="link-preview">
+    <a href="https://github.com/uds5501/server/tree/new_histogram" target="_blank">
+        <h4>GitHub - uds5501/server at new_histogram</h4>
+        <p>MariaDB server is a community developed fork of MySQL server. Started by core members of the original MySQL team...</p>
+        <span class="domain">github.com</span>
+    </a>
+</div>
+
+<p>It <strong>seems to be giving a better selectivity ratio</strong> <strong>than both existing MySQL and Postgres</strong> implementation (<em>on a sample of 1 table only btw, so don’t take my word for it</em> 😅)</p>
+
+<h1 id="a-new-histogram">A new histogram</h1>
+
+<p>Without further ado, let’s build a new histogram.</p>
+
+<p>For my implementation, I want to merge both ideas, that is, I’ll maintain histogram bounds as the endpoints of a bucket, and in the buckets, I’ll put average running sum (running sum / total sum) instead of assuming equidistant values. To achieve this, I’ll need two things at the point of histogram creation.</p>
+
+<ol>
+  <li>I’ll need the minimum and maximum column values and the histogram width, so typically, the bound would range in<code class="language-plaintext highlighter-rouge">(max-min)/histogram width</code> size.</li>
+  <li>I’ll need the frequency of appearance of all the different values.</li>
+</ol>
+
+<p>Once these conditions are satisfied, my histogram should be able to do three basic things:</p>
+
+<ol>
+  <li>Estimate the <strong><em>range_selectivity</em></strong> between two different values.</li>
+  <li>Estimate the <strong><em>point_selectivity</em></strong> for a particular value (query planner uses that for estimating constant queries)</li>
+  <li>I should be able to print this histogram!</li>
+</ol>
+
+<h2 id="lifecycle-of-a-histogram-for-a-column">Lifecycle of a histogram for a column</h2>
+
+<p>Before we jump into our data structure, let’s try and understand the auxiliary existing ones.</p>
+
+<p>MySQL columns create a tree that maintains the element and the frequency of these elements. For histogram creation, we need to follow a certain lifecycle (described in the image), during the <code class="language-plaintext highlighter-rouge">walk_tree_with_histogram</code> step, we maintain the relevant frequency data in a counter of sorts before finalizing the histogram!</p>
+
+<p>This <code class="language-plaintext highlighter-rouge">walk_tree_with_histogram</code> runs on top of an internal data structure that uniquely holds elements and their frequency in a tree form.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*ep_T2di0YkSqMdyifilVvA.png" alt="The life cycle of a histogram" /></p>
+
+<h2 id="building-the-histogram">Building the histogram</h2>
+
+<p>With the lifecycle out of the way, let’s focus on how would we create one. <code class="language-plaintext highlighter-rouge">Histogram_base</code>is the base class that any histogram has to implement, and our binary will be implementing the same.</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Histogram_range_binary</span> <span class="k">final</span><span class="o">:</span> <span class="k">public</span> <span class="n">Histogram_base</span> <span class="p">{</span>
+  <span class="n">Histogram_type</span> <span class="n">type</span><span class="p">;</span>
+  <span class="kt">size_t</span> <span class="n">size</span><span class="p">;</span> <span class="cm">/* Size of values array, in bytes */</span>
+  <span class="n">uchar</span> <span class="o">*</span><span class="n">values</span><span class="p">;</span>
+  <span class="nl">public:</span>
+    <span class="n">Histogram_range_binary</span><span class="p">()</span> <span class="p">{</span>
+      <span class="n">type</span> <span class="o">=</span> <span class="n">RANGE_HB</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">uint</span> <span class="n">get_width</span><span class="p">()</span> <span class="k">override</span>
+    <span class="p">{</span>
+      <span class="k">return</span> <span class="n">size</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">uint</span> <span class="n">get_size</span><span class="p">()</span> <span class="k">override</span>
+    <span class="p">{</span>
+      <span class="k">return</span> <span class="p">(</span><span class="n">uint</span><span class="p">)</span><span class="n">size</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">Histogram_type</span> <span class="n">get_type</span><span class="p">()</span> <span class="k">override</span> <span class="p">{</span><span class="k">return</span> <span class="n">type</span><span class="p">;}</span>
+    <span class="kt">bool</span> <span class="n">parse</span><span class="p">(</span><span class="n">MEM_ROOT</span> <span class="o">*</span><span class="n">mem_root</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span><span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span><span class="o">*</span><span class="p">,</span> <span class="n">Field</span><span class="o">*</span><span class="p">,</span>
+             <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">hist_data</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">hist_data_len</span><span class="p">)</span> <span class="k">override</span> <span class="p">;</span>
+    <span class="kt">void</span> <span class="n">serialize</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">to_field</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="n">init_for_collection</span><span class="p">(</span><span class="n">MEM_ROOT</span> <span class="o">*</span><span class="n">mem_root</span><span class="p">,</span> <span class="n">Histogram_type</span> <span class="n">htype_arg</span><span class="p">,</span>
+                            <span class="n">ulonglong</span> <span class="n">size</span><span class="p">)</span> <span class="k">override</span> <span class="p">;</span>
+    <span class="n">Histogram_builder</span> <span class="o">*</span><span class="n">create_builder</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">col</span><span class="p">,</span> <span class="n">uint</span> <span class="n">col_len</span><span class="p">,</span>
+                                      <span class="n">ha_rows</span> <span class="n">rows</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">point_selectivity</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">field</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">endpoint</span><span class="p">,</span>
+                           <span class="kt">double</span> <span class="n">avg_sel</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">range_selectivity</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">field</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">min_endp</span><span class="p">,</span>
+                           <span class="n">key_range</span> <span class="o">*</span><span class="n">max_endp</span><span class="p">,</span> <span class="kt">double</span> <span class="n">avg_sel</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="nf">set_value</span><span class="p">(</span><span class="n">uint</span> <span class="n">i</span><span class="p">,</span> <span class="kt">double</span> <span class="n">val</span><span class="p">)</span> <span class="p">{</span>
+      <span class="p">((</span><span class="n">uint8</span> <span class="o">*</span><span class="p">)</span> <span class="n">values</span><span class="p">)[</span><span class="n">i</span><span class="p">]</span><span class="o">=</span> <span class="p">(</span><span class="n">uint8</span><span class="p">)</span> <span class="p">(</span><span class="n">val</span> <span class="o">*</span> <span class="p">((</span><span class="n">uint</span><span class="p">)</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">));</span>
+    <span class="p">}</span>
+  <span class="k">private</span><span class="o">:</span>
+    <span class="kt">double</span> <span class="nf">get_value_double</span><span class="p">(</span><span class="n">uint</span> <span class="n">i</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="n">DBUG_ASSERT</span><span class="p">(</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">get_width</span><span class="p">());</span>
+      <span class="k">return</span> <span class="p">(((</span><span class="n">uint8</span> <span class="o">*</span><span class="p">)</span> <span class="n">values</span><span class="p">)[</span><span class="n">i</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span> <span class="p">((</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>To give a brief introduction to this class, <code class="language-plaintext highlighter-rouge">Histogram_range_binary</code> will be utilizing an array of <code class="language-plaintext highlighter-rouge">uchar</code> values. Every time a double value has to be set on a certain index, I’ll be setting it as a <code class="language-plaintext highlighter-rouge">uint8</code> , essentially multiplying the value to <code class="language-plaintext highlighter-rouge">(1&lt;&lt;8)-1</code> (see <strong><em>set_value</em></strong> and <strong><em>get_value_double</em></strong>).</p>
+
+<p>I could’ve used the <code class="language-plaintext highlighter-rouge">double*</code> array directly but later on when calculating the range selectivity, it seems that the memory address where I was storing the data, over there some garbage value was re-written, so I decided to hack around and borrow the implementation done by SINGLE_PREC_HB.</p>
+
+<p>Now, once the binary is sorted, we still need to create a builder no? For my use case, I built <code class="language-plaintext highlighter-rouge">Histogram_range_builder</code></p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Histogram_range_builder</span> <span class="o">:</span> <span class="k">public</span> <span class="n">Histogram_builder</span> <span class="p">{</span>
+  <span class="n">Advanced_stats_collector</span> <span class="n">advanced_counter</span><span class="p">;</span> <span class="c1">// Init the new advanced counter here.</span>
+  <span class="n">Field</span> <span class="o">*</span><span class="n">min_value</span><span class="p">;</span>        <span class="cm">/* pointer to the minimal value for the field   */</span>
+  <span class="n">Field</span> <span class="o">*</span><span class="n">max_value</span><span class="p">;</span>        <span class="cm">/* pointer to the maximal value for the field   */</span>
+  <span class="n">Histogram_range_binary</span> <span class="o">*</span><span class="n">histogram</span><span class="p">;</span>  <span class="cm">/* the histogram location                  */</span>
+  <span class="n">uint</span> <span class="n">hist_width</span><span class="p">;</span>         <span class="cm">/* the number of points in the histogram        */</span>
+  <span class="n">uint</span> <span class="n">curr_bucket</span><span class="p">;</span>        <span class="cm">/* number of the current bucket to be built     */</span>  
+  <span class="n">uint</span> <span class="n">curr_ptr</span><span class="p">;</span>           <span class="cm">/* current pointer to tack position */</span>
+<span class="nl">public:</span>
+  <span class="n">Histogram_range_builder</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">col</span><span class="p">,</span> <span class="n">uint</span> <span class="n">col_len</span><span class="p">,</span> <span class="n">ha_rows</span> <span class="n">rows</span><span class="p">)</span>
+    <span class="o">:</span> <span class="n">Histogram_builder</span><span class="p">(</span><span class="n">col</span><span class="p">,</span> <span class="n">col_len</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+  <span class="p">{</span>
+    <span class="n">Column_statistics</span> <span class="o">*</span><span class="n">col_stats</span><span class="o">=</span> <span class="n">col</span><span class="o">-&gt;</span><span class="n">collected_stats</span><span class="p">;</span>
+    <span class="n">min_value</span><span class="o">=</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">min_value</span><span class="p">;</span>
+    <span class="n">max_value</span><span class="o">=</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">max_value</span><span class="p">;</span>
+    <span class="n">histogram</span><span class="o">=</span> <span class="p">(</span><span class="n">Histogram_range_binary</span><span class="o">*</span><span class="p">)</span><span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">histogram</span><span class="p">;</span>
+    <span class="n">hist_width</span><span class="o">=</span> <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">get_width</span><span class="p">();</span>
+    <span class="n">curr_bucket</span><span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">curr_ptr</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="kt">int</span> <span class="nf">next</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="n">elem</span><span class="p">,</span> <span class="n">element_count</span> <span class="n">elem_cnt</span><span class="p">)</span> <span class="k">override</span>
+  <span class="p">{</span>
+    <span class="n">counters</span><span class="p">.</span><span class="n">next</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">elem_cnt</span><span class="p">);</span>
+    <span class="n">advanced_counter</span><span class="p">.</span><span class="n">next</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">elem_cnt</span><span class="p">);</span>
+    <span class="n">column</span><span class="o">-&gt;</span><span class="n">store_field_value</span><span class="p">((</span><span class="n">uchar</span> <span class="o">*</span><span class="p">)</span> <span class="n">elem</span><span class="p">,</span> <span class="n">col_length</span><span class="p">);</span>
+    <span class="kt">double</span> <span class="n">position_in_interval</span> <span class="o">=</span> <span class="n">column</span><span class="o">-&gt;</span><span class="n">pos_in_interval</span><span class="p">(</span><span class="n">min_value</span><span class="p">,</span> <span class="n">max_value</span><span class="p">);</span>
+    <span class="n">advanced_counter</span><span class="p">.</span><span class="n">push_pos</span><span class="p">(</span><span class="n">position_in_interval</span><span class="p">);</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here, as you can notice, it also extends a Histogram_builder base class which contains a basic counter. Largely, you need to understand that this class has a <code class="language-plaintext highlighter-rouge">Advanced_counter</code> which stores the <em>relative position</em> of the element in the tree ( <code class="language-plaintext highlighter-rouge">(element-min) / (max-min)</code> ) and its <em>frequency</em> in two separate arrays, while the basic stat counter, <code class="language-plaintext highlighter-rouge">counters</code> will be storing the <strong><em>total running count, the number of distinct elements, and the number of elements with only single values.</em></strong></p>
+
+<p>Once we have gathered all the data, we will be building the actual histogram in the final step of a histogram lifecycle, called <code class="language-plaintext highlighter-rouge">finalize()</code> . The code might look a bit complicated (fairly because it’s not clean code perse) but on a high level, <strong><em>it’s a two-pointer algorithm</em></strong>.</p>
+
+<p>We’ll go through all the values collected, and see if the current element’s position is within the bucket, if it’s within the bucket then we increase the running sum. If it’s not within the bucket, then we set the running sum to the appropriate bucket, and move the bucket forward till it matches our pointer!</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="n">finalize</span><span class="p">()</span> <span class="k">override</span> 
+<span class="p">{</span>
+  <span class="c1">// here build the histogram.</span>
+  <span class="kt">double</span> <span class="n">bucket_range</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">hist_width</span><span class="p">;</span>
+  <span class="n">ulonglong</span> <span class="n">distinctValues</span> <span class="o">=</span> <span class="n">counters</span><span class="p">.</span><span class="n">get_count_distinct</span><span class="p">();</span>
+  <span class="n">ulonglong</span> <span class="n">totalCnt</span> <span class="o">=</span> <span class="n">counters</span><span class="p">.</span><span class="n">get_count</span><span class="p">();</span>
+  
+  <span class="kt">double</span> <span class="n">default_val</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">;</span>
+  <span class="kt">double</span> <span class="n">pos_min</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">curr_bucket</span><span class="p">;</span>
+  <span class="kt">double</span> <span class="n">pos_max</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">curr_bucket</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+  <span class="kt">double</span> <span class="n">running_pos</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">pos_max</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">pos_max</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="n">ulonglong</span> <span class="n">runningSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="n">curr_ptr</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">curr_ptr</span><span class="o">&lt;</span><span class="n">distinctValues</span><span class="p">;</span> <span class="n">curr_ptr</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">curr_pos</span> <span class="o">=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">pos_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">curr_pos</span> <span class="o">&lt;</span> <span class="n">pos_max</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">runningSum</span> <span class="o">+=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">frequency_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+      <span class="n">running_pos</span> <span class="o">=</span> <span class="n">curr_pos</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">==</span> <span class="n">pos_max</span> <span class="o">&amp;&amp;</span> <span class="n">curr_ptr</span> <span class="o">==</span> <span class="n">distinctValues</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+      <span class="c1">// last bucket.</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">!=</span> <span class="n">running_pos</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">curr_bucket</span> <span class="o">!=</span> <span class="n">hist_width</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">&lt;</span> <span class="n">curr_pos</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+          <span class="k">if</span> <span class="p">(</span><span class="n">running_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">running_pos</span> <span class="o">&lt;</span> <span class="n">pos_max</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kt">double</span> <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span><span class="n">runningSum</span> <span class="o">/</span> <span class="n">totalCnt</span><span class="p">;</span>
+            <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+            <span class="n">runningSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+          <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+            <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">default_val</span><span class="p">);</span>
+          <span class="p">}</span>
+          <span class="n">curr_bucket</span><span class="o">++</span><span class="p">;</span>
+          <span class="n">pos_min</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">curr_bucket</span><span class="p">;</span>
+          <span class="n">pos_max</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">curr_bucket</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+          <span class="k">if</span> <span class="p">(</span><span class="n">pos_max</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">pos_max</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+          <span class="p">}</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+      <span class="n">runningSum</span> <span class="o">+=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">frequency_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+      <span class="n">running_pos</span> <span class="o">=</span> <span class="n">curr_pos</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="c1">// we need to fill the buckets with runningSum till pos_max is again &gt; curr_pos</span>
+      <span class="k">while</span> <span class="p">(</span><span class="n">curr_bucket</span> <span class="o">!=</span> <span class="n">hist_width</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">&lt;</span> <span class="n">curr_pos</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">running_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">running_pos</span> <span class="o">&lt;</span> <span class="n">pos_max</span><span class="p">)</span> <span class="p">{</span>
+          <span class="kt">double</span> <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span><span class="n">runningSum</span> <span class="o">/</span> <span class="n">totalCnt</span><span class="p">;</span>
+          <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+          <span class="n">runningSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+            <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">default_val</span><span class="p">);</span>
+        <span class="p">}</span>
+        <span class="n">curr_bucket</span><span class="o">++</span><span class="p">;</span>
+        <span class="n">pos_min</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">curr_bucket</span><span class="p">;</span>
+        <span class="n">pos_max</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">curr_bucket</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">pos_max</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+          <span class="n">pos_max</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">curr_pos</span> <span class="o">&lt;=</span> <span class="n">pos_max</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="n">runningSum</span> <span class="o">+=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">frequency_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+        <span class="n">running_pos</span> <span class="o">=</span> <span class="n">curr_pos</span><span class="p">;</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">curr_ptr</span> <span class="o">==</span> <span class="n">distinctValues</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span><span class="n">runningSum</span> <span class="o">/</span> <span class="n">totalCnt</span><span class="p">;</span>
+    <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+    <span class="n">curr_bucket</span><span class="o">++</span><span class="p">;</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="implementing-the-range_selectivity">Implementing the range_selectivity()</h2>
+
+<p>Once the histogram is built, we have to implement the actual range selectivity. I have borrowed the existing histogram algorithm to find the relative position of the elements.</p>
+
+<p>After that, I try and figure out the buckets that will be the bounds for the minimum and maximum position (again, could’ve used a binary search but since the maximum histogram width itself is <strong><em>256,</em></strong> why bother optimizing an O(1)? ) Once they are found, all we need to do is add up the values present in each bucket and return that.</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">double</span> <span class="n">Histogram_range_binary</span><span class="o">::</span><span class="n">range_selectivity</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">field</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">min_endp</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">max_endp</span><span class="p">,</span> <span class="kt">double</span> <span class="n">avg_sel</span><span class="p">)</span> <span class="p">{</span>
+  <span class="kt">double</span> <span class="n">sel</span><span class="p">,</span> <span class="n">min_mp_pos</span><span class="p">,</span> <span class="n">max_mp_pos</span><span class="p">;</span>
+  <span class="n">Column_statistics</span> <span class="o">*</span><span class="n">col_stats</span><span class="o">=</span> <span class="n">field</span><span class="o">-&gt;</span><span class="n">read_stats</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">min_endp</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="p">(</span><span class="n">field</span><span class="o">-&gt;</span><span class="n">null_ptr</span> <span class="o">&amp;&amp;</span> <span class="n">min_endp</span><span class="o">-&gt;</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+  <span class="p">{</span>
+    <span class="n">store_key_image_to_rec</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="p">(</span><span class="n">uchar</span> <span class="o">*</span><span class="p">)</span> <span class="n">min_endp</span><span class="o">-&gt;</span><span class="n">key</span><span class="p">,</span>
+                           <span class="n">field</span><span class="o">-&gt;</span><span class="n">key_length</span><span class="p">());</span>
+    <span class="n">min_mp_pos</span><span class="o">=</span>
+        <span class="n">field</span><span class="o">-&gt;</span><span class="n">pos_in_interval</span><span class="p">(</span><span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">min_value</span><span class="p">,</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">max_value</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="k">else</span>
+    <span class="n">min_mp_pos</span><span class="o">=</span> <span class="mf">0.0</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">max_endp</span><span class="p">)</span>
+  <span class="p">{</span>
+    <span class="n">store_key_image_to_rec</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="p">(</span><span class="n">uchar</span> <span class="o">*</span><span class="p">)</span> <span class="n">max_endp</span><span class="o">-&gt;</span><span class="n">key</span><span class="p">,</span>
+                           <span class="n">field</span><span class="o">-&gt;</span><span class="n">key_length</span><span class="p">());</span>
+    <span class="n">max_mp_pos</span><span class="o">=</span>
+        <span class="n">field</span><span class="o">-&gt;</span><span class="n">pos_in_interval</span><span class="p">(</span><span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">min_value</span><span class="p">,</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">max_value</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="k">else</span>
+    <span class="n">max_mp_pos</span><span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+  
+  <span class="kt">double</span> <span class="n">bucket_range</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">get_width</span><span class="p">();</span>
+  <span class="n">uint</span> <span class="n">bucket</span><span class="p">,</span> <span class="n">bucket_min</span><span class="p">,</span> <span class="n">bucket_max</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="n">bucket</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">bucket</span> <span class="o">&lt;</span> <span class="n">get_width</span><span class="p">();</span> <span class="n">bucket</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">min_pos</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">bucket</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">max_pos</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">bucket</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">max_pos</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">max_pos</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">min_mp_pos</span> <span class="o">&gt;=</span> <span class="n">min_pos</span> <span class="o">&amp;&amp;</span> <span class="n">min_mp_pos</span> <span class="o">&lt;</span> <span class="n">max_pos</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">bucket_min</span> <span class="o">=</span> <span class="n">bucket</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">max_mp_pos</span> <span class="o">&gt;=</span> <span class="n">min_pos</span> <span class="o">&amp;&amp;</span> <span class="n">max_mp_pos</span> <span class="o">&lt;</span> <span class="n">max_pos</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">bucket_max</span> <span class="o">=</span> <span class="n">bucket</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">max_mp_pos</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">bucket_max</span> <span class="o">=</span> <span class="n">get_width</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">min_mp_pos</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">bucket_min</span> <span class="o">=</span> <span class="n">get_width</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="n">sel</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="n">uint</span> <span class="n">i</span> <span class="o">=</span> <span class="n">bucket_min</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;=</span><span class="n">bucket_max</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">sel</span> <span class="o">+=</span> <span class="n">get_value_double</span><span class="p">(</span><span class="n">i</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="n">sql_print_information</span><span class="p">(</span><span class="s">"[histogram_range_binary::range_sel] avg_sel: %f, range_sel: %f"</span><span class="p">,</span> <span class="n">avg_sel</span><span class="p">,</span> <span class="n">sel</span><span class="p">);</span>
+  <span class="n">set_if_bigger</span><span class="p">(</span><span class="n">sel</span><span class="p">,</span> <span class="n">avg_sel</span><span class="p">);</span>
+  <span class="k">return</span> <span class="n">sel</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="estimation-accuracy">Estimation Accuracy</h2>
+
+<p>The algorithm sounds good but let’s see how it performs. I’ll be building a similar table which we used in the last example to check the selectivity given by this histogram.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*lAgFnHx37KeQb5uwBoRq0g.png" alt="The histogram on demo table" /></p>
+
+<p>The <code class="language-plaintext highlighter-rouge">demo</code> table above is using RANGE_HB histogram with size 10.</p>
+
+<p>However, the selectivity is <strong><em>~0.8</em></strong> in our histogram’s case, which means it’ll suggest the query planner to return <code class="language-plaintext highlighter-rouge">0.8 * 25 = 20</code> rows instead of 18 in the other two implementations, <strong><em>which means that this implementation gives more accurate estimations!</em></strong> (For this use case at least)</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*U8A76tcEYSG1ibsiGuB2Bw.png" alt="Range selectivity" /></p>
+
+<h2 id="displaying-the-histogram">Displaying the histogram</h2>
+
+<p>The math is done, now time to show the world what we are doing. I modified the existing display function to show actual values on each bucket instead of the delta of the last bucket (you can check out the implementation in the GitHub repository linked at the top).</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*V29sH8EqOPmENGryBAfcmg.png" alt="Histogram display" /></p>
+
+<p>For the sake of this demo, I created another table <code class="language-plaintext highlighter-rouge">imported_csv</code> and used the histogram there as well, as you can see in the buckets where there is no value, the sum is plain $0.000$!</p>
+
+<h1 id="caveats-disclaimers">Caveats (Disclaimers)</h1>
+
+<blockquote>
+  <p>While the implementation looks smooth, like <a href="https://www.cs.cmu.edu/~pavlo/">Andy Pavlo</a> says, <em>there are no free lunches in software engineering</em>!</p>
+</blockquote>
+
+<p>There are a couple of bugs where I am not sure how this histogram or the server itself will behave, let’s talk about them.</p>
+
+<ul>
+  <li>In the native implementations, you didn’t need each position and frequency separately, you just needed a running sum of the elements which ensured that your builder didn’t consume an array worth of memory. In my implementation, with the introduction of 2 vectors in the <code class="language-plaintext highlighter-rouge">Advanced_Counter</code> , it might consumer instance/program memory when there are let’s say millions of distinct values.</li>
+  <li>During the <code class="language-plaintext highlighter-rouge">walk_tree_with_histogram</code> step, it’s required to delete the histogram builder pointer and free up that memory <em>manually</em>. Due to some issue, this memory pointer was already deallocated before I could free it up myself. For now, the pointer deletion has been commented out… so, after a few large histograms, <strong><em>your server is bound to crash in the current state</em></strong>. (welp! send a fix if anyone can help 😢)</li>
+</ul>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>In all, this hack helped me gain a deeper insight and appreciation of how query planner internally functions in MySQL source and how could I help it estimate the row selectivity <em>slightly better</em> with tradeoffs! I’ll mess around with its kernel while trying to solve an existing issue in the future maybe, for now, adios!</p>
+
+  </div><a class="u-url" href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2.html" hidden></a>
+</article>
+
+    </div>
+  </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col">
+        <p class="feed-subscribe">
+          <a href="/feed.xml">
+            <svg class="svg-icon orange">
+              <use xlink:href="/assets/minima-social-icons.svg#rss"></use>
+            </svg><span>Subscribe</span>
+          </a>
+        </p>
+        <ul class="contact-list">
+          <li class="p-name">Uddeshya Singh</li>
+          <li><a class="u-email" href="mailto:singhuddeshyaofficial@gmail.com">singhuddeshyaofficial@gmail.com</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p>My technical ramblings, long and short.
+</p>
+      </div>
+    </div>
+
+    <div class="social-links"><ul class="social-media-list"><li>
+  <a rel="me" href="https://github.com/uds5501" target="_blank" title="github">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#github"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://twitter.com/uds5501" target="_blank" title="twitter">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#twitter"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://www.linkedin.com/in/singhuddeshya5501/" target="_blank" title="linkedin">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#linkedin"></use>
+    </svg>
+  </a>
+</li>
+</ul>
+</div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
+
+<script type="text/javascript">
+  MathJax = {
+      tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      }
+  };
+</script>
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>

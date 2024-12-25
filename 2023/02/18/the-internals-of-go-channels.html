@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang=" en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>The Internals of Go Channels | Uddeshya’s Musings</title>
+<meta name="generator" content="Jekyll v4.3.4" />
+<meta property="og:title" content="The Internals of Go Channels" />
+<meta name="author" content="Uddeshya Singh" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Recently I have been reading about the design of the Go language and this post is an accumulation of notes specific to the buffered channels and how they work." />
+<meta property="og:description" content="Recently I have been reading about the design of the Go language and this post is an accumulation of notes specific to the buffered channels and how they work." />
+<meta property="og:site_name" content="Uddeshya’s Musings" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2023-02-18T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="The Internals of Go Channels" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Uddeshya Singh"},"dateModified":"2023-02-18T00:00:00+00:00","datePublished":"2023-02-18T00:00:00+00:00","description":"Recently I have been reading about the design of the Go language and this post is an accumulation of notes specific to the buffered channels and how they work.","headline":"The Internals of Go Channels","mainEntityOfPage":{"@type":"WebPage","@id":"/2023/02/18/the-internals-of-go-channels.html"},"url":"/2023/02/18/the-internals-of-go-channels.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Uddeshya&apos;s Musings" />
+</head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Uddeshya&#39;s Musings</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">The Internals of Go Channels</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2023-02-18T00:00:00+00:00" itemprop="datePublished">
+        Feb 18, 2023
+      </time><div class="post-tags"><a href="/tags/#go" class="post-tag">#go</a><a href="/tags/#channels" class="post-tag">#channels</a></div></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Recently I have been reading about the design of the Go language and this post is an accumulation of notes specific to the buffered channels and how they work.</p>
+
+<p>If you want to understand what a channel in go is, please refer to <a href="https://gobyexample.com/channels">this article [1]</a>. After this point, I assume that we have a basic understanding of a go channel, that being said, let’s now dive in!</p>
+
+<h1 id="making-a-go-channel">Making a go channel</h1>
+
+<p>Before we dive into how go channels are made, let’s see <strong>what they look like under the hood.</strong></p>
+
+<h2 id="sneak-peek-at-the-hchan-struct">Sneak peek at the “hchan” struct</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*l6ovT9IBB8K8f6y5rE9-RA.png" alt="captionless image" /></p>
+
+<p>The above snippet is from <code class="language-plaintext highlighter-rouge">go/src/runtime/chan.go</code> , the file which contains the implementation of go channels. The <code class="language-plaintext highlighter-rouge">hchan</code> struct is the one which stores all the information about a particular channel.</p>
+
+<p><code class="language-plaintext highlighter-rouge">hchan</code> has an element <code class="language-plaintext highlighter-rouge">buf</code> that stores data as a circular queue. <code class="language-plaintext highlighter-rouge">sendx</code> is the index in which goroutines will push the next element while <code class="language-plaintext highlighter-rouge">recvx</code> is the index from where the next element will be taken from.</p>
+
+<p>An important thing to note here is that the <code class="language-plaintext highlighter-rouge">lock</code> not only protects the fields in <code class="language-plaintext highlighter-rouge">hchan</code>but also protects the fields of the goroutines (<code class="language-plaintext highlighter-rouge">sudog</code>) blocked in the channels.</p>
+
+<p>Now that we understand the basic structure of a channel, let’s take a look at <strong>how they are initialized.</strong></p>
+
+<h2 id="the-makechan-function">The makechan function</h2>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// go/src/runtime/chan.go</span>
+<span class="k">func</span> <span class="n">makechan</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">chantype</span><span class="p">,</span> <span class="n">size</span> <span class="kt">int</span><span class="p">)</span> <span class="o">*</span><span class="n">hchan</span> <span class="p">{</span>
+   <span class="n">elem</span> <span class="o">:=</span> <span class="n">t</span><span class="o">.</span><span class="n">elem</span>
+   <span class="c">// compiler checks this but be safe.</span>
+   <span class="k">if</span> <span class="n">elem</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;=</span> <span class="m">1</span><span class="o">&lt;&lt;</span><span class="m">16</span> <span class="p">{</span>
+      <span class="n">throw</span><span class="p">(</span><span class="s">"makechan: invalid channel element type"</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="k">if</span> <span class="n">hchanSize</span><span class="o">%</span><span class="n">maxAlign</span> <span class="o">!=</span> <span class="m">0</span> <span class="o">||</span> <span class="n">elem</span><span class="o">.</span><span class="n">align</span> <span class="o">&gt;</span> <span class="n">maxAlign</span> <span class="p">{</span>
+      <span class="n">throw</span><span class="p">(</span><span class="s">"makechan: bad alignment"</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="n">mem</span><span class="p">,</span> <span class="n">overflow</span> <span class="o">:=</span> <span class="n">math</span><span class="o">.</span><span class="n">MulUintptr</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="kt">uintptr</span><span class="p">(</span><span class="n">size</span><span class="p">))</span>
+   <span class="k">if</span> <span class="n">overflow</span> <span class="o">||</span> <span class="n">mem</span> <span class="o">&gt;</span> <span class="n">maxAlloc</span><span class="o">-</span><span class="n">hchanSize</span> <span class="o">||</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="m">0</span> <span class="p">{</span>
+      <span class="nb">panic</span><span class="p">(</span><span class="n">plainError</span><span class="p">(</span><span class="s">"makechan: size out of range"</span><span class="p">))</span>
+   <span class="p">}</span>
+   <span class="c">// Hchan does not contain pointers interesting for GC when elements stored in buf do not contain pointers.</span>
+   <span class="c">// buf points into the same allocation, elemtype is persistent.</span>
+   <span class="c">// SudoG's are referenced from their owning thread so they can't be collected.</span>
+   <span class="c">// TODO(dvyukov,rlh): Rethink when collector can move allocated objects.</span>
+   <span class="k">var</span> <span class="n">c</span> <span class="o">*</span><span class="n">hchan</span>
+   <span class="k">switch</span> <span class="p">{</span>
+   <span class="k">case</span> <span class="n">mem</span> <span class="o">==</span> <span class="m">0</span><span class="o">:</span>
+      <span class="c">// Queue or element size is zero.</span>
+      <span class="n">c</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">hchan</span><span class="p">)(</span><span class="n">mallocgc</span><span class="p">(</span><span class="n">hchanSize</span><span class="p">,</span> <span class="no">nil</span><span class="p">,</span> <span class="no">true</span><span class="p">))</span>
+      <span class="c">// Race detector uses this location for synchronization.</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">buf</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">raceaddr</span><span class="p">()</span>
+   <span class="k">case</span> <span class="n">elem</span><span class="o">.</span><span class="n">ptrdata</span> <span class="o">==</span> <span class="m">0</span><span class="o">:</span>
+      <span class="c">// Elements do not contain pointers.</span>
+      <span class="c">// Allocate hchan and buf in one call.</span>
+      <span class="n">c</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">hchan</span><span class="p">)(</span><span class="n">mallocgc</span><span class="p">(</span><span class="n">hchanSize</span><span class="o">+</span><span class="n">mem</span><span class="p">,</span> <span class="no">nil</span><span class="p">,</span> <span class="no">true</span><span class="p">))</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">buf</span> <span class="o">=</span> <span class="n">add</span><span class="p">(</span><span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">(</span><span class="n">c</span><span class="p">),</span> <span class="n">hchanSize</span><span class="p">)</span>
+   <span class="k">default</span><span class="o">:</span>
+      <span class="c">// Elements contain pointers.</span>
+      <span class="n">c</span> <span class="o">=</span> <span class="nb">new</span><span class="p">(</span><span class="n">hchan</span><span class="p">)</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">buf</span> <span class="o">=</span> <span class="n">mallocgc</span><span class="p">(</span><span class="n">mem</span><span class="p">,</span> <span class="n">elem</span><span class="p">,</span> <span class="no">true</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="n">c</span><span class="o">.</span><span class="n">elemsize</span> <span class="o">=</span> <span class="kt">uint16</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+   <span class="n">c</span><span class="o">.</span><span class="n">elemtype</span> <span class="o">=</span> <span class="n">elem</span>
+   <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="o">=</span> <span class="kt">uint</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+   <span class="n">lockInit</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">,</span> <span class="n">lockRankHchan</span><span class="p">)</span>
+   <span class="k">if</span> <span class="n">debugChan</span> <span class="p">{</span>
+      <span class="nb">print</span><span class="p">(</span><span class="s">"makechan: chan="</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="s">"; elemsize="</span><span class="p">,</span> <span class="n">elem</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="s">"; dataqsiz="</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="s">"</span><span class="se">\n</span><span class="s">"</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="k">return</span> <span class="n">c</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here, <code class="language-plaintext highlighter-rouge">makechan</code>function initializes a <code class="language-plaintext highlighter-rouge">hchan</code> struct calculates the size of the buffer needed according to the element being stored, and eventually returns a pointer to the struct (<code class="language-plaintext highlighter-rouge">*hchan</code>).</p>
+
+<blockquote>
+  <p>I’ll be honest here, I am not very sure what the bad alignment validation is all about, diving a little deeper shows that it’s about memory validation and type alignment in go, couple of topics which I am not very sure about. Probably next blog post will be about that? <em>😄</em></p>
+</blockquote>
+
+<h1 id="sending-an-element-to-the-channel">Sending an element to the channel</h1>
+
+<p>Now, let’s talk about how a goroutine (<em>g1</em>) pushes an element in the channel.</p>
+
+<p>Channel sends are handled by <code class="language-plaintext highlighter-rouge">chansend</code></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="n">c</span> <span class="o">==</span> <span class="no">nil</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="o">!</span><span class="n">block</span> <span class="p">{</span>
+     <span class="k">return</span> <span class="no">false</span>
+    <span class="p">}</span>
+    <span class="n">gopark</span><span class="p">(</span><span class="no">nil</span><span class="p">,</span> <span class="no">nil</span><span class="p">,</span> <span class="n">waitReasonChanSendNilChan</span><span class="p">,</span> <span class="n">traceEvGoStop</span><span class="p">,</span> <span class="m">2</span><span class="p">)</span>
+    <span class="n">throw</span><span class="p">(</span><span class="s">"unreachable"</span><span class="p">)</span>
+   <span class="p">}</span>
+  
+   <span class="k">if</span> <span class="n">debugChan</span> <span class="p">{</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s">"chansend: chan="</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="s">"</span><span class="se">\n</span><span class="s">"</span><span class="p">)</span>
+   <span class="p">}</span>
+  
+   <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+    <span class="n">racereadpc</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">raceaddr</span><span class="p">(),</span> <span class="n">callerpc</span><span class="p">,</span> <span class="n">abi</span><span class="o">.</span><span class="n">FuncPCABIInternal</span><span class="p">(</span><span class="n">chansend</span><span class="p">))</span>
+   <span class="p">}</span>
+  
+   <span class="c">// Fast path: check for failed non-blocking operation without acquiring the lock.</span>
+   <span class="c">//</span>
+   <span class="c">// After observing that the channel is not closed, we observe that the channel is</span>
+   <span class="c">// not ready for sending. Each of these observations is a single word-sized read</span>
+   <span class="c">// (first c.closed and second full()).</span>
+   <span class="c">// Because a closed channel cannot transition from 'ready for sending' to</span>
+   <span class="c">// 'not ready for sending', even if the channel is closed between the two observations,</span>
+   <span class="c">// they imply a moment between the two when the channel was both not yet closed</span>
+   <span class="c">// and not ready for sending. We behave as if we observed the channel at that moment,</span>
+   <span class="c">// and report that the send cannot proceed.</span>
+   <span class="c">//</span>
+   <span class="c">// It is okay if the reads are reordered here: if we observe that the channel is not</span>
+   <span class="c">// ready for sending and then observe that it is not closed, that implies that the</span>
+   <span class="c">// channel wasn't closed during the first observation. However, nothing here</span>
+   <span class="c">// guarantees forward progress. We rely on the side effects of lock release in</span>
+   <span class="c">// chanrecv() and closechan() to update this thread's view of c.closed and full().</span>
+   <span class="k">if</span> <span class="o">!</span><span class="n">block</span> <span class="o">&amp;&amp;</span> <span class="n">c</span><span class="o">.</span><span class="n">closed</span> <span class="o">==</span> <span class="m">0</span> <span class="o">&amp;&amp;</span> <span class="n">full</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="no">false</span>
+   <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>If the <code class="language-plaintext highlighter-rouge">send</code> on the channel is not blocking and the channel is full, it just returns a <code class="language-plaintext highlighter-rouge">false</code> or, if the channel is closed, it’ll throw an error saying <code class="language-plaintext highlighter-rouge">send on closed channel</code></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  <span class="o">...</span>
+  <span class="k">if</span> <span class="n">sg</span> <span class="o">:=</span> <span class="n">c</span><span class="o">.</span><span class="n">recvq</span><span class="o">.</span><span class="n">dequeue</span><span class="p">();</span> <span class="n">sg</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+     <span class="c">// Found a waiting receiver. We pass the value we want to send</span>
+     <span class="c">// directly to the receiver, bypassing the channel buffer (if any).</span>
+     <span class="n">send</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">sg</span><span class="p">,</span> <span class="n">ep</span><span class="p">,</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span> <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span> <span class="p">},</span> <span class="m">3</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">true</span>
+  <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Otherwise, it will first check whether the channel has any waiting receiver goroutine (<em>g2</em>), if yes, <em>g1</em> will directly send data to <em>g2</em>’s stack! (It also implies that the channel was already empty, we’ll discuss this direct copy more in detail)</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  <span class="o">...</span>
+  <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">qcount</span> <span class="o">&lt;</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+     <span class="c">// Space is available in the channel buffer. Enqueue the element to send.</span>
+     <span class="n">qp</span> <span class="o">:=</span> <span class="n">chanbuf</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">sendx</span><span class="p">)</span>
+     <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+        <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">sendx</span><span class="p">,</span> <span class="no">nil</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">qp</span><span class="p">,</span> <span class="n">ep</span><span class="p">)</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">sendx</span><span class="o">++</span>
+     <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">sendx</span> <span class="o">==</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">sendx</span> <span class="o">=</span> <span class="m">0</span>
+     <span class="p">}</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">qcount</span><span class="o">++</span>
+     <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">true</span>
+  <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Let’s say there was no waiting goroutine(<em>g2</em>), then we check whether there is space available in the channel buffer, if it is, we copy the element in buffer memory and increment the <code class="language-plaintext highlighter-rouge">sendx</code> and <code class="language-plaintext highlighter-rouge">qcount</code> while unlocking the channel!</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*wEFxS_jUg5FeXDpllcyndQ.png" alt="Populating c.buf with memory copy" /></p>
+
+<p>But… what will happen if there was no space left in the channel’s buffer? Here, two situations can happen.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*Q4YVE5bPF9vb5-j0I-OPoA.png" alt="How blocking and nonblocking sends are compiled." /></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  
+  <span class="o">...</span>
+  
+  <span class="k">if</span> <span class="o">!</span><span class="n">block</span> <span class="p">{</span>
+     <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">false</span>
+  <span class="p">}</span>
+  
+  <span class="c">// Block on the channel. Some receiver will complete our operation for us.</span>
+  <span class="n">gp</span> <span class="o">:=</span> <span class="n">getg</span><span class="p">()</span>
+  <span class="n">mysg</span> <span class="o">:=</span> <span class="n">acquireSudog</span><span class="p">()</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">=</span> <span class="m">0</span>
+  <span class="k">if</span> <span class="n">t0</span> <span class="o">!=</span> <span class="m">0</span> <span class="p">{</span>
+     <span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">=</span> <span class="o">-</span><span class="m">1</span>
+  <span class="p">}</span>
+  <span class="c">// No stack splits between assigning elem and enqueuing mysg</span>
+  <span class="c">// on gp.waiting where copystack can find it.</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">elem</span> <span class="o">=</span> <span class="n">ep</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">waitlink</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">g</span> <span class="o">=</span> <span class="n">gp</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">isSelect</span> <span class="o">=</span> <span class="no">false</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="n">c</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">waiting</span> <span class="o">=</span> <span class="n">mysg</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">param</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">c</span><span class="o">.</span><span class="n">sendq</span><span class="o">.</span><span class="n">enqueue</span><span class="p">(</span><span class="n">mysg</span><span class="p">)</span>
+  <span class="c">// Signal to anyone trying to shrink our stack that we're about</span>
+  <span class="c">// to park on a channel. The window between when this G's status</span>
+  <span class="c">// changes and when we set gp.activeStackChans is not safe for</span>
+  <span class="c">// stack shrinking.</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">parkingOnChan</span><span class="o">.</span><span class="n">Store</span><span class="p">(</span><span class="no">true</span><span class="p">)</span>
+  <span class="n">gopark</span><span class="p">(</span><span class="n">chanparkcommit</span><span class="p">,</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">),</span> <span class="n">waitReasonChanSend</span><span class="p">,</span> <span class="n">traceEvGoBlockSend</span><span class="p">,</span> <span class="m">2</span><span class="p">)</span>
+  <span class="c">// Ensure the value being sent is kept alive until the</span>
+  <span class="c">// receiver copies it out. The sudog has a pointer to the</span>
+  <span class="c">// stack object, but sudogs aren't considered as roots of the</span>
+  <span class="c">// stack tracer.</span>
+  <span class="n">KeepAlive</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span>
+  
+  <span class="c">// someone woke us up.</span>
+  <span class="k">if</span> <span class="n">mysg</span> <span class="o">!=</span> <span class="n">gp</span><span class="o">.</span><span class="n">waiting</span> <span class="p">{</span>
+     <span class="n">throw</span><span class="p">(</span><span class="s">"G waiting list is corrupted"</span><span class="p">)</span>
+  <span class="p">}</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">waiting</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">activeStackChans</span> <span class="o">=</span> <span class="no">false</span>
+  <span class="n">closed</span> <span class="o">:=</span> <span class="o">!</span><span class="n">mysg</span><span class="o">.</span><span class="n">success</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">param</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="k">if</span> <span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">&gt;</span> <span class="m">0</span> <span class="p">{</span>
+     <span class="n">blockevent</span><span class="p">(</span><span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span><span class="o">-</span><span class="n">t0</span><span class="p">,</span> <span class="m">2</span><span class="p">)</span>
+  <span class="p">}</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">releaseSudog</span><span class="p">(</span><span class="n">mysg</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">closed</span> <span class="p">{</span>
+     <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">closed</span> <span class="o">==</span> <span class="m">0</span> <span class="p">{</span>
+        <span class="n">throw</span><span class="p">(</span><span class="s">"chansend: spurious wakeup"</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="nb">panic</span><span class="p">(</span><span class="n">plainError</span><span class="p">(</span><span class="s">"send on closed channel"</span><span class="p">))</span>
+  <span class="p">}</span>
+  <span class="k">return</span> <span class="no">true</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>If it were a non-blocking send call, we’ll move out of the send function, if not, then we enqueue this sender (<em>g1</em>) to the channel’s <code class="language-plaintext highlighter-rouge">sendq</code> and ask the go runtime scheduler to pause <em>g1.</em></p>
+
+<blockquote>
+  <p>The <strong>sudog</strong> here is a struct which holds information for a waiting goroutine (in our case, <strong>g1</strong>). Go runtime is going to park this <strong>sending</strong> <strong>goroutine (g1),</strong> and according to comments, we are ensuring that</p>
+
+  <ol>
+    <li>g1’s stack should not shrink — (understand more about stack growth and shrinking from this <a href="https://www.youtube.com/watch?v=-K11rY57K7k">video</a>[4])</li>
+    <li>Ensure that the value which g1 was going to send is kept alive until receiver (g2) copies out of it.</li>
+  </ol>
+</blockquote>
+
+<p>When a receiver goroutine (<em>g2</em>) comes along and wakes us up, we finally release the <code class="language-plaintext highlighter-rouge">sudog</code> and check if the channel was closed or not once again. If it was, throw an error, else return true!</p>
+
+<h2 id="now-what-was-that-direct-send-thing-again">Now, what was that direct send thing again?</h2>
+
+<p>In an empty-buffered / unbuffered channel, when <em>g2</em> is already present in <code class="language-plaintext highlighter-rouge">recvq</code> , go allows the <em>g1</em> to directly copy the element in receiving <em>g2’s</em> stack.</p>
+
+<p>The Go GC assumes that stack writes only happen when <em>g1</em> is running and is only done by it.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*l-QhXKEyTfguIZ2vOP893g.png" alt="Screenshot from Kavya’s video regarding the scenario when g2 comes first." /></p>
+
+<p>A thing to note is that a write barrier is established before the element is copied to the stack of receiving goroutine. This saves one memory copy operation! The actual implementation of <code class="language-plaintext highlighter-rouge">memmove</code> can be found here — <a href="https://en.cppreference.com/w/c/string/byte/memmove">CPP Reference</a>[5]</p>
+
+<h1 id="receiving-an-element-from-the-channel">Receiving an element from the channel</h1>
+
+<p>As the title suggests, here we need to understand how a goroutine receives an element from the channel. following earlier conventions, the receiver goroutine will be <em>g2,</em> and sending goroutine will be <em>g1.</em></p>
+
+<p>Receives are handled by <code class="language-plaintext highlighter-rouge">chanrecv</code> and the docstring has beautifully explained its role, so I am just going to state that here —</p>
+
+<blockquote>
+  <p><strong>chanrecv</strong> receives on channel <strong>c</strong> and writes the received data to <strong>ep</strong>.
+<strong>ep</strong> may be nil, in which case received data is ignored.
+If <strong>block</strong> == false and no elements are available, returns (false, false).
+Otherwise, if <strong>c</strong> is closed, zeros <strong><em>ep** and returns (true, false).
+Otherwise, fills in **</em>ep</strong> with an element and returns (true, true).
+A non-nil <strong>ep</strong> must point to the heap or the caller’s stack.</p>
+</blockquote>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chanrecv</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">)</span> <span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="n">received</span> <span class="kt">bool</span><span class="p">)</span> <span class="p">{</span>
+  <span class="o">...</span>
+  <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">qcount</span> <span class="o">&gt;</span> <span class="m">0</span> <span class="p">{</span>
+     <span class="c">// Receive directly from queue</span>
+     <span class="n">qp</span> <span class="o">:=</span> <span class="n">chanbuf</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">)</span>
+     <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+        <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">,</span> <span class="no">nil</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="k">if</span> <span class="n">ep</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+        <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">ep</span><span class="p">,</span> <span class="n">qp</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="n">typedmemclr</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">qp</span><span class="p">)</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="o">++</span>
+     <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">==</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">=</span> <span class="m">0</span>
+     <span class="p">}</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">qcount</span><span class="o">--</span>
+     <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">true</span><span class="p">,</span> <span class="no">true</span>
+  <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Pretty standard circular queue operations again, after certain validations and checking if there is no <em>g1</em> already in <code class="language-plaintext highlighter-rouge">sendq</code> , it checks whether there is any element in the channel or not. If there is an element, the channel copies it to <code class="language-plaintext highlighter-rouge">ep</code> and <code class="language-plaintext highlighter-rouge">recvx</code> is incremented while <code class="language-plaintext highlighter-rouge">qcount</code> is decrement and the channel is unlocked.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*T-y7fMf5rTGsgofn33DPNg.png" alt="Receiving data from a channel" /></p>
+
+<p>If there was a <em>g1</em> already present in <code class="language-plaintext highlighter-rouge">sendq</code>, <em>g2</em> will initiate a direct receive to <code class="language-plaintext highlighter-rouge">ep</code> if the buffer is empty, just like a direct send was done, otherwise, <em>g2</em> will take the element from the head of the buffer and copy the element from <em>g1</em>’s stack to the tail of the channel buffer and unpark <em>g1.(i.e.,</em> set <em>g1</em> back to runnable)</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// The portion responsible to initiate the 2 phase receive</span>
+<span class="k">func</span> <span class="n">recv</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">sg</span> <span class="o">*</span><span class="n">sudog</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">unlockf</span> <span class="k">func</span><span class="p">(),</span> <span class="n">skip</span> <span class="kt">int</span><span class="p">)</span> <span class="p">{</span>
+   <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="o">==</span> <span class="m">0</span> <span class="p">{</span>
+      <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+         <span class="n">racesync</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">sg</span><span class="p">)</span>
+      <span class="p">}</span>
+      <span class="k">if</span> <span class="n">ep</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+         <span class="c">// copy data from sender</span>
+         <span class="n">recvDirect</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">sg</span><span class="p">,</span> <span class="n">ep</span><span class="p">)</span>
+      <span class="p">}</span>
+   <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="c">// Queue is full. Take the item at the</span>
+      <span class="c">// head of the queue. Make the sender enqueue</span>
+      <span class="c">// its item at the tail of the queue. Since the</span>
+      <span class="c">// queue is full, those are both the same slot.</span>
+      <span class="n">qp</span> <span class="o">:=</span> <span class="n">chanbuf</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+         <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">,</span> <span class="no">nil</span><span class="p">)</span>
+         <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">,</span> <span class="n">sg</span><span class="p">)</span>
+      <span class="p">}</span>
+      <span class="c">// copy data from queue to receiver</span>
+      <span class="k">if</span> <span class="n">ep</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+         <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">ep</span><span class="p">,</span> <span class="n">qp</span><span class="p">)</span>
+      <span class="p">}</span>
+      <span class="c">// copy data from sender to queue</span>
+      <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">qp</span><span class="p">,</span> <span class="n">sg</span><span class="o">.</span><span class="n">elem</span><span class="p">)</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="o">++</span>
+      <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">==</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+         <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">=</span> <span class="m">0</span>
+      <span class="p">}</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">sendx</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="c">// c.sendx = (c.sendx+1) % c.dataqsiz</span>
+   <span class="p">}</span>
+   <span class="n">sg</span><span class="o">.</span><span class="n">elem</span> <span class="o">=</span> <span class="no">nil</span>
+   <span class="n">gp</span> <span class="o">:=</span> <span class="n">sg</span><span class="o">.</span><span class="n">g</span>
+   <span class="n">unlockf</span><span class="p">()</span>
+   <span class="n">gp</span><span class="o">.</span><span class="n">param</span> <span class="o">=</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">(</span><span class="n">sg</span><span class="p">)</span>
+   <span class="n">sg</span><span class="o">.</span><span class="n">success</span> <span class="o">=</span> <span class="no">true</span>
+   <span class="k">if</span> <span class="n">sg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">!=</span> <span class="m">0</span> <span class="p">{</span>
+      <span class="n">sg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">=</span> <span class="n">cputicks</span><span class="p">()</span>
+   <span class="p">}</span>
+   <span class="n">goready</span><span class="p">(</span><span class="n">gp</span><span class="p">,</span> <span class="n">skip</span><span class="o">+</span><span class="m">1</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Why?</strong> So that <em>g1</em> does not have to acquire the channel’s lock again and copy the element to buffer itself, hence saving some CPU cycles. Brilliant IMO!</p>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/KBZlN0izeiY?si=OQZEBeoLBUZzptjU&amp;start=880" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen=""></iframe>
+
+<p>Lastly, if there is no element to receive from the channel, the channel will either unlock itself and return true; or park <em>g2</em> and enqueue it <code class="language-plaintext highlighter-rouge">recvq</code> until a sender (<em>g1</em>) comes along and wakes <em>g2</em> up.</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>Hopefully, with the aid of these notes and accompanying illustrations, I managed to demystify how channels internally work in Go.</p>
+
+<p>I have come to love the small tweaks and optimizations which Go-engineers have done in such a simple data structure to save a few CPU cycles and ensure memory safety like the <strong><em>direct sends &amp; receives</em></strong>, <strong><em>memcpy</em></strong> and I hope I illustrated them well enough for you to appreciate them as well :D</p>
+
+<h1 id="resources">Resources</h1>
+
+<ul>
+  <li>[1] Go Channels — <a href="https://gobyexample.com/channels">https://gobyexample.com/channels</a></li>
+  <li>[2] GopherCon 2017: Kavya Joshi — <a href="https://www.youtube.com/watch?v=KBZlN0izeiY">Understanding Channels</a></li>
+  <li>[3] <a href="https://go101.org/article/memory-layout.html">Memory Layout in Go</a></li>
+  <li>[4] <a href="https://www.youtube.com/watch?v=-K11rY57K7k">Go scheduler: Implementing language with lightweight concurrency</a></li>
+  <li>[5] <a href="https://en.cppreference.com/w/c/string/byte/memmove">CPP Reference — memmove_.s</a></li>
+</ul>
+
+  </div><a class="u-url" href="/2023/02/18/the-internals-of-go-channels.html" hidden></a>
+</article>
+
+    </div>
+  </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col">
+        <p class="feed-subscribe">
+          <a href="/feed.xml">
+            <svg class="svg-icon orange">
+              <use xlink:href="/assets/minima-social-icons.svg#rss"></use>
+            </svg><span>Subscribe</span>
+          </a>
+        </p>
+        <ul class="contact-list">
+          <li class="p-name">Uddeshya Singh</li>
+          <li><a class="u-email" href="mailto:singhuddeshyaofficial@gmail.com">singhuddeshyaofficial@gmail.com</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p>My technical ramblings, long and short.
+</p>
+      </div>
+    </div>
+
+    <div class="social-links"><ul class="social-media-list"><li>
+  <a rel="me" href="https://github.com/uds5501" target="_blank" title="github">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#github"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://twitter.com/uds5501" target="_blank" title="twitter">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#twitter"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://www.linkedin.com/in/singhuddeshya5501/" target="_blank" title="linkedin">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#linkedin"></use>
+    </svg>
+  </a>
+</li>
+</ul>
+</div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
+
+<script type="text/javascript">
+  MathJax = {
+      tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      }
+  };
+</script>
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>

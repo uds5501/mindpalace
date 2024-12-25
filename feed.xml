@@ -1,0 +1,1596 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.3.4">Jekyll</generator><link href="/feed.xml" rel="self" type="application/atom+xml" /><link href="/" rel="alternate" type="text/html" /><updated>2024-12-25T11:22:00+00:00</updated><id>/feed.xml</id><title type="html">Uddeshya’s Musings</title><subtitle>My technical ramblings, long and short.
+</subtitle><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><entry><title type="html">Mathematical Intuition of Phi φ Accrual Failure Detection</title><link href="/2024/04/24/mathematical-intuition-of-phi-accrual-failure-detection.html" rel="alternate" type="text/html" title="Mathematical Intuition of Phi φ Accrual Failure Detection" /><published>2024-04-24T00:00:00+00:00</published><updated>2024-04-24T00:00:00+00:00</updated><id>/2024/04/24/mathematical-intuition-of-phi-accrual-failure-detection</id><content type="html" xml:base="/2024/04/24/mathematical-intuition-of-phi-accrual-failure-detection.html"><![CDATA[<p>This post is migrated version of the one already published on <a href="https://singhuddeshyaofficial.medium.com/mathematical-intuition-of-phi-%CF%86-accrual-failure-detection-111d9c898011" title="@embed">Medium</a>.</p>
+
+<p>In 2004, Naohiro Hayashibara [Et. al] released <a href="https://www.researchgate.net/publication/29682135_The_ph_accrual_failure_detector">Phi Accrual Failure Detection paper</a>. This post will elaborate on the goals of this detector, the design, and underlying mathematical principles to understand this beautiful yet simple algorithm!</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p><strong>Before the maths, let’s understand why we even need accrual detectors.</strong></p>
+
+<p>Imagine you have a distributed system with a master process monitoring a bunch of worker processors (imagine master &lt;&gt; slave replica setups in your common databases). For the master node to know that the slave is still up and running and can be allocated tasks, it needs to know if the slave is even up and running or not.</p>
+
+<p>If you have been playing with any distributed system, it’s natural to imagine that heartbeats fit the bill for this use case. In <strong>Sections II C and D</strong> the authors touch base on <strong>heartbeat</strong> &amp; <strong>adaptive</strong> <strong>detectors</strong> (which utilize heartbeats internally!).</p>
+
+<blockquote>
+  <p>The underlying issue for both of these detectors is their incapability to handle scenarios where let’s say your heartbeat timeout is configured to be 1000ms and the worker fails to give any response before 1005ms. <strong>The detectors would assume the slave to be down which is actually up and running</strong>.</p>
+</blockquote>
+
+<p>These detectors answer in a binary (0/1) fashion, leaving no room for ambiguity. Either system is up or it is not, there’s nothing in between. This is where your accrual detectors shine by providing the <strong>probability of the system being down.</strong></p>
+
+<p>By the way, if you’re here to play around with this detector, I would recommend you to check out my rust implementation for the same with the provided <a href="https://github.com/uds5501/Phi-Accrual-Detector">source code</a> or the create if you want to use it in your project <a href="https://crates.io/crates/phi-accrual-detector" title="@embed">crates/phi-accrual-detector</a></p>
+
+<h1 id="uncovering-the-magic-of-probability">Uncovering the magic of probability</h1>
+
+<p>The probability of whether the system is down or not can be termed <strong>suspicion $(\phi)$</strong> which is dependent on the <strong>probability of whether the master would receive any heartbeat after the current time.</strong></p>
+
+<p>In the paper, the authors have stored the last 1000 (sample window space) intervals, the mean &amp; variance of this sample space, and the timestamp of the last heartbeat/ping received by the master. Additionally, they assume that this sample space comprising of inter-arrival time differences follows a <strong>normal distribution.</strong> With these in mind, they have mentioned the following definitions:</p>
+
+\[\begin{align*}
+\phi(t_{now}) &amp;= -\log_{10}(P_{later}(t_{now} - T_{last})) \tag{1} \\
+P_{later} &amp;= \frac{1}{\sigma\sqrt{2\pi}}\int_{t}^{+\infty}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx \tag{2} \\
+P_{later} &amp;= 1 - F(t) \tag{3} \\
+\end{align*}\]
+
+<p>Here, $F(t)$ is the cumulative distribution function of the normal distribution with mean $\mu$ and variance $\sigma^2$.</p>
+
+<p>There’s too much for stats novices (like me) to take in at once. So let’s pause. Let’s try and slowly build up our intuition how do we even get to the formula at (3) and what do these terms mean? The following subpoints will explain the relevant concepts sequentially leading up to the derivation of the above formula.</p>
+
+<h3 id="a-continuous-random-variable"><strong>[A] Continuous Random Variable</strong></h3>
+
+<p>A random variable is a variable whose value is unknown or a function that assigns a value to each experiment’s outcome. It could have a discrete value at a particular point (discrete random variable) or it could have a continuous value across a range.</p>
+
+<p>You could imagine the snowfall record of a city throughout the year as a continuous variable because, on some days the snowfall might’ve been 5ft, 3.4 ft, 0 ft, etc hence taking continuously infinite values. However, a more accurate definition of a continuous random variable would be that if any random variable could be described by a <strong>probability density function (PDF)</strong>, then it’s continuous.</p>
+
+<p>A <strong>PDF</strong> can be imagined as a function of probability for some variable <code class="language-plaintext highlighter-rouge">X</code> that is <strong>spread throughout the real line</strong> but the sum of all the probabilities across all the values <code class="language-plaintext highlighter-rouge">X</code> could take is 1. Kindly refer to the notes mentioned below to understand PDFs and continuous random variable definitions. (In the example, we have taken an exponential continuous distribution)</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*wcUVYsjgSNPVc_LC6-zzOg.png" alt="Probability Distribution Functions" /></p>
+
+<h3 id="b-cumulative-distributive-function-cdf"><strong>[B] Cumulative Distributive Function (CDF)</strong></h3>
+
+<p>This would be the easiest one to explain by far, a CDF is an expression that denotes the probability of a random variable (both continuous and discrete) to appear than a particular value(let’s say x) on the real line. More formal denotation is described in the image below:</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*irTlp6JpwNQmOcTe_m7tsw.png" alt="Cumulative Distributive Function" /></p>
+
+<h3 id="c-normal-distribution-gaussian-distributions"><strong>[C] Normal Distribution (Gaussian distributions)</strong></h3>
+
+<p>Another new term! hold on, we are so close to glory 😅.</p>
+
+<p>You must’ve seen this bell curve distribution when it comes to denoting metrics that have the majority of values centered around their mean and the probability of that value reduces as you move out further away from the mean.</p>
+
+<p>The derivation of standard normal is tricky and I believe this <a href="https://math.stackexchange.com/questions/384893/how-was-the-normal-distribution-derived">math overflow question</a> helps the best to get the intuition of its derivation. For our research paper’s derivation purpose, we’ll take it as a given that a normal distribution’s PDF will be denoted by <strong>N(mean, variance).</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*NhpGSO2hSVskNQVm_uFngA.png" alt="Normal Distributions" /></p>
+
+<h1 id="derivation">Derivation</h1>
+
+<p>With the three concepts above, we are now equipped to derive our <strong>suspicion $(\phi)$!</strong></p>
+
+<p>We will start by visualizing the sample space, let’s say for all the last 10000 incoming heartbeat intervals, you get the <strong>mean as 3 and variance as 0.04</strong>. Assuming a normal distribution, the graph would look somewhat like this:</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*Min93ZoBd6A-Xoygl6s3Wg.png" alt="Bell Curve" /></p>
+
+<p>Now, assume that your last heartbeat was received at some time 96.8s and you want to check the suspicion of the system being down at 100s (basically, 3.2s after the last ping). That just means we want to get the probability under the shaded region as shown in the picture below.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*CPDMhNtN9A5jTgAOfFUQrA.png" alt="Visualizing the probability" /></p>
+
+<p>Using this intuition, we’ll now redefine phi step by step as mentioned below</p>
+
+\[\begin{align}
+\phi(t_{now}) &amp;= -\log_{10}(P_{later}(t_{now} - T_{last}))  \\
+&amp;= -\log_{10}(P_{later}(t_{\Delta})) \text{ where } t_{\Delta} = (t_{now} - T_{last}) \tag{1} \\[1em]
+P(-\infty \leq t \leq \infty) &amp;= 1 \text{ [from basic PDF definition]} \tag{2} \\
+P(-\infty \leq t \leq t_{\Delta}) + P(t_{\Delta} \leq t \leq \infty) &amp;= 1 \text{ [additive property]} \tag{3} \\
+F(t_{\Delta}) + P(t_{\Delta} \leq t \leq \infty) &amp;= 1 \text{ [CDF definition]} \tag{4} \\
+P(t_{\Delta} \leq t \leq \infty) &amp;= 1 - F(t_{\Delta}) \tag{5} \\
+P_{later}(t) &amp;= 1 - F(t_{\Delta}) \tag{6} \\[1em]
+F(t_{\Delta}) &amp;= P(-\infty \leq t \leq t_{\Delta}) \\
+&amp;= \frac{1}{\sigma\sqrt{2\pi}}\int_{-\infty}^{t_{\Delta}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx \tag{7} \\[1em]
+\phi(t_{now}) &amp;= -\log_{10}(P_{later}(t_{\Delta})) \\
+&amp;= -\log_{10}(1 - \frac{1}{\sigma\sqrt{2\pi}}\int_{-\infty}^{t_{\Delta}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx) \tag{8} \\
+&amp;= -\log_{10}(\frac{1}{\sigma\sqrt{2\pi}}\int_{t_{\Delta}}^{\infty}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx)
+\end{align}\]
+
+<p>(1) is the basic definition of suspicion while (2) is derived from the definitions of PDF that the sum of all probabilities across the real line for the variable should be 1. Additionally, we can break the entire real line from (-inf, inf) to (-int, t) + (t, inf) as shown in (3).</p>
+
+<p>Great, now remember we defined P(x ≤ t) as a Cumulative distributive function? Let’s leverage that in (4). Steps (5) and (6) are basic algebra. In step (7), we’ll just expand the CDF using the PDF of this normal distribution and plug it in (8). Tada! your implementation can choose whatever flavor it wants out of the two mentioned in the end 😄</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>By this blog, I hope you achieved a better grasp of random variables and how to decipher basic mathematical derivations in the failure detector research papers (and hopefully others).</p>
+
+<p>If you wish to go deeper into detail regarding how to choose the suspicion value to take action on, what’s an ideal detector, and so on, I’d recommend skimming through the paper, it’s an amazing read in itself.</p>
+
+<h1 id="references">References:</h1>
+
+<ul>
+  <li>[1] <a href="https://www.youtube.com/watch?v=eXf2Zak-s0o&amp;list=PLUl4u3cNGP60hI9ATjSFgLZpbNJ7myAg6&amp;index=80">MIT Courseware L8 onwards</a></li>
+  <li>[2] <a href="https://math.stackexchange.com/a/385427">Deriving normal distribution</a></li>
+  <li>[3] <a href="https://www.researchgate.net/publication/29682135_The_ph_accrual_failure_detector">The Phi Accrual Failure</a></li>
+</ul>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="distributed-systems" /><category term="statistics" /><category term="failure-detection" /><summary type="html"><![CDATA[This post is migrated version of the one already published on Medium.]]></summary></entry><entry><title type="html">Krafty Raft: Deciphering KRaft consensus — 1</title><link href="/2024/02/18/krafty-raft-deciphering-kraft-consensus.html" rel="alternate" type="text/html" title="Krafty Raft: Deciphering KRaft consensus — 1" /><published>2024-02-18T00:00:00+00:00</published><updated>2024-02-18T00:00:00+00:00</updated><id>/2024/02/18/krafty-raft-deciphering-kraft-consensus</id><content type="html" xml:base="/2024/02/18/krafty-raft-deciphering-kraft-consensus.html"><![CDATA[<p>My attempt to decipher the Raft whitepaper and how KRaft implementation adheres to the raft philosophy and techniques.</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p><strong>This could be yet another run-of-the-mill post about the</strong> <strong><a href="https://raft.github.io/raft.pdf" title="@embed">raft consensus algorithm</a></strong> , possibly one of the least intimidating consensus algorithms that a system engineer might encounter in their career. My aim in this post is to highlight a couple of elements, apart from being a scribble note:</p>
+<ul>
+  <li>How KRaft is different from pure Raft.</li>
+  <li>Giving insights referring to implementation samples wherever possible to highlight the said difference.</li>
+</ul>
+
+<h1 id="moving-away-from-zookeeper">Moving away from zookeeper</h1>
+
+<p>Before we dive down into the Kraft algorithm itself, it’ll be good to understand the history of the alternative it’s replacing. Summarizing <a href="https://www.confluent.io/blog/why-replace-zookeeper-with-kafka-raft-the-log-of-all-logs/">Confluent’s blog on Zookeeper replacement</a>, one could conclude the following about Kafka's old architecture</p>
+
+<p>There used to be a single controller broker among other brokers whose primary differentiator among other brokers was storing <strong>cluster metadata like broker IDs and racks, topic, partition, leader and ISR information, and cluster-wide and per topic configs, as well as security credentials.</strong> Zookeeper’s majority of read/write traffic was directed via this controller node.
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*R_RVQWJa6rPE0arv44T8JQ.png" alt="Medium-Image" /></p>
+
+<p>The limitations of this setup were in terms of the controller’s scalability. Being a single node, it’s responsible for updating the broker’s metadata linearly per partition.</p>
+<ul>
+  <li>The majority of metadata change propagation between controller &lt;&gt; brokers was linear and was done in order of number of partitions, this proved to be a major bottleneck in scaling.</li>
+  <li>The maximum number of watchers, size limits on Znodes, etc proved to be a limitation regarding keeping Zookeeper as a metadata store.</li>
+</ul>
+
+<h2 id="enter-raft">Enter Raft</h2>
+
+<p>The fun part behind metadata storage in Zookeeper is that internally, it also stores a sequence of metadata update events, which you can imagine to be a <em>metadata log</em>  (to support watchers). So, why not store it as log storage across nodes where the state could be eventually consistent (aka, how raft does it!)
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*xL0WdQ6cHVPqG-yO_XJP2g.png" alt="Medium-Image" /></p>
+
+<h1 id="participating-entities-in-kraft-and-raft">Participating entities in KRaft and Raft</h1>
+
+<p>As per KIP-595’s illustrated <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-StateMachine">state machine</a>, there is one more state a broker could go to apart from the classic <strong>Follower</strong> , <strong>Candidate</strong> , and <strong>Leader</strong>  states called the <strong>Observer</strong>  state.
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*l8H3HVXj3Fhsn6CO5A-JXQ.png" alt="Medium-Image" /></p>
+
+<p>As per the above-mentioned KIP, each broker will act as an Observer and every controller node shall act as a Follower / Leader.</p>
+
+<p>I would have loved to go deeper into the metadata quorum data storage, but the <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-631%3A+The+Quorum-based+Kafka+Controller">KIP-631</a> specifying the same hasn’t been accepted yet :(</p>
+
+<h1 id="leader-election">Leader election</h1>
+
+<p>Let’s move on the the juicy bits, I was interested in how the leader elections take place, and being honest, there’s not a lot of difference between the two flavors of raft in this regard apart from the following distinctions:</p>
+<ul>
+  <li>A slice of time where a leader should serve is called <strong>Epoch</strong>  in KRaft whereas its counterpart in “pure” Raft is called <strong>Term</strong> .</li>
+  <li>In Kraft, a broker is allowed to vote for only a single broker in an epoch and this state is required even when the broker restarts, hence it’s stored in the disk in a <code class="language-plaintext highlighter-rouge">quorum-state</code>  file that is fsync’d immediately when appended. You can find the Quorum State structure <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-QuorumState">here</a>.</li>
+</ul>
+
+<h2 id="election-begins">Election Begins!</h2>
+
+<p>An important distinctive factor in Kraft and Raft is that the former is <em>pull-based</em>  while the latter is <em>push-based</em> which means that in Kraft, a voter(follower) keeps polling with the leader to find out the latest log entries (we’ll discuss this later in detail).</p>
+
+<p>Keeping this in mind, <strong>an election could be triggered in the following conditions</strong> :</p>
+<ul>
+  <li>If it fails to receive a valid <code class="language-plaintext highlighter-rouge">FetchResponse</code>  from the current leader before the expiration of <code class="language-plaintext highlighter-rouge">quorum.fetch.timeout.ms</code></li>
+  <li>If it receives a <code class="language-plaintext highlighter-rouge">EndQuorumEpoch</code>  request from the current leader notifying the end of the Leader’s current term (explained better in the zombie leader section)</li>
+  <li>If it fails to receive a majority of votes before the expiration of <code class="language-plaintext highlighter-rouge">quorum.election.timeout.ms</code>  after declaring itself a candidate.</li>
+</ul>
+
+<h2 id="the-voting-process">The voting process</h2>
+
+<p>Let’s say a controller node had to trigger the election due to one of the above-mentioned reasons, in their local persisted quorum state they’d increment the ongoing epoch and ask the peers to vote for them.</p>
+
+<p>In the <a href="https://raft.github.io/raft.pdf">raft paper</a>, section 5.4.1 (Election Restriction) illustrates the conditions for a peer to vote for a broker:</p>
+<ul>
+  <li>A voter decides if its term is &lt; the requester’s term or not.</li>
+  <li>It also verifies if the logs of the requester are at least up-to-date with its logs or not (it does so by comparing the last term and offsets).</li>
+</ul>
+
+<p>The Kraft implementation uses the same process to determine this apart from verifying if the broker’s candidateId was even expected to be a candidate or not. You can dive deep into code implementation in the <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L548C30-L548C47">handleVoteRequest()</a> method.</p>
+
+<h2 id="handling-voting-deadlock">Handling voting deadlock</h2>
+
+<p>Let’s say there was no clear majority through the election process, then there could be two scenarios:</p>
+<ul>
+  <li><strong>This was the first election,</strong>  in that event, the candidate steps down and waits for <em>quorum.election.backoff.max.ms</em> before retrying.</li>
+  <li><strong>This election took place when the leader stepped down</strong> , there’s a list of suggested future leaders as per their log’s offset. Here, for each candidate in a descending order, the backoff is configured as <code class="language-plaintext highlighter-rouge">MIN(retryBackOffMaxMs, retryBackoffMs * 2^(N - 1))</code>  where <strong>N</strong> is the position in the list.</li>
+</ul>
+
+<h2 id="announcing-the-election-win-and-stepping-down">Announcing the election win and stepping down</h2>
+
+<p>Once the leader is elected, it is supposed to send out a <strong>BeginEpochQuorum</strong> <em>**</em> message where every voter will verify the epoch for which the leader is claiming to win the election, recheck its own cached leader &amp; transition to the follower.</p>
+
+<p>Once the quorum's epoch time is finished, the leader transitions to a <strong>RESIGNED</strong>  state and sends all the peers <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-EndQuorumEpoch">EndQuorumEpoch</a> along with preferred candidates for the next leader election (as mentioned above).</p>
+
+<p>You can check more about the resignation mechanism in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L1970">pollResigned()</a> and how the followers have been handling this event in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L782">handleEndQuorumEpochRequest()</a>.</p>
+
+<h2 id="preventing-zombie-leaders">Preventing zombie leaders</h2>
+
+<p>Suppose a leader is elected during the epoch, the followers will keep asking for data till the end of the quorum epoch. However, once the epoch ends, and for some reason, <strong>the leader fails to resign (it might be offline)</strong> , the candidates by themselves will start a new election. Here the leader might not get the voting event altogether and when it restarts, it might still have the persistent state of being a leader. A famous case of a <strong>zombie leader</strong> .
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*909pdtnUWB_qCjNxbscdqg.png" alt="Medium-Image" /></p>
+
+<p>To handle this, if no other voter is coming up to fetch the metadata for <code class="language-plaintext highlighter-rouge">quorum.fetch.timeout.ms</code>  the leader will start a new election.</p>
+
+<p>If you notice the illustration above, let’s say <strong>A</strong>  was the leader in Epoch 1 but crashed, in the meantime the other followers decided to hold the election and elected <strong>B</strong>  as a new leader. By epoch 3, <strong>A</strong>  restarts and expects itself to be a leader (due to the persistent state). After the configured time passes it will try re-electing itself in epoch 2 but since the current epoch is 3, it’ll become a follower.</p>
+
+<p><strong>Caveat</strong> : Ideally, if a new leader is already present for the new election, this zombie leader should become a follower but if the zombie stays offline and joins later on while contacting the new candidates during the election, It might end up winning the elections given it achieves the rare condition of</p>
+<ul>
+  <li>Having a higher epoch than the rest of the peers.</li>
+  <li>Having most up-to-date log end offset (and somehow there’s an peer which has also up-to-date offset which didn’t win the election)</li>
+</ul>
+
+<h1 id="appending-logs">Appending logs</h1>
+
+<h2 id="pulling-vs-pushing">Pulling vs Pushing</h2>
+
+<p>In the raft literature, it’s a paradigm that the leader should be pushing its logs using “appendRPC” to its followers where the followers will acknowledge the same and append it to their logs.</p>
+
+<p>In KRaft, however, the onus is on the followers and observers to keep fetching the updates and recent logs by themselves using <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-Fetch">Fetch API</a>.</p>
+
+<p>This aids in removing the scalability issue where a single controller node had to propagate the metadata updates to each broker by itself in worst case complexity of <code class="language-plaintext highlighter-rouge">O(partitions)</code></p>
+
+<h2 id="high-watermarks-and-log-end-offset">High watermarks and Log End Offset</h2>
+
+<p>Before we dive deeper into log appends, we should address a couple of important terms in Kraft’s replication literature.</p>
+
+<p><strong>High Watermark (HWM) —</strong> This is the highest log offset of a partition that has been replicated across a majority of the In Sync Replicas (ISR).</p>
+
+<p><strong>Log End Offset (LEO) —</strong> This is the highest log offset of a partition that has been appended on the local leader. This offset might not be replicated across the ISRs. Generally, a leader would move the high watermark only when a majority of the followers have replicated the message hence<code class="language-plaintext highlighter-rouge">(HWM &amp;lt;= LEO)</code></p>
+
+<h2 id="what-happens-when-followersobservers-invoke-fetchapi">What happens when Followers/Observers invoke FetchAPI?</h2>
+
+<p>One of the three things could’ve happened when followers invoke fetch API with their current LEO and term (implementation is elaborated in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L940">HandleFetchRequest()</a> method)
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*IsY7DfuQ62Z6rzIFE2JByQ.png" alt="Medium-Image" /></p>
+<ul>
+  <li><strong>If the follower’s fetched log offset is currently 0</strong> , just return them the latest offset.</li>
+  <li><strong>If the follower’s fetched offset &gt;log fetch offset</strong>  in leader or simply the epochs don’t match, then it’s a divergent case.</li>
+  <li><strong>All good</strong> ? Then it’s a valid case and update the log end offset for this follower. After this, if high watermark can be updated (implemented in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/LeaderState.java#L210">maybeUpdateHighWatermark()</a> ). The overall idea is to check the log end offsets of peers in descending order, find the offset of <strong>n/2th</strong>  peer and if the high water mark of said peer is &lt; replicated offset, then update the same)</li>
+</ul>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>By this illustration, I hope I was able to draw a decent comparison between subtle differences among KRaft and Raft. I hope to elaborate more on the Snapshotting semantics in the next blog post (Elaborated in <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-630%3A+Kafka+Raft+Snapshot#KIP630:KafkaRaftSnapshot-RejectedAlternatives">KIP-630</a>). Until next time, peace!</p>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="distributed-systems" /><category term="kafka" /><category term="raft" /><category term="consensus-algorithms" /><summary type="html"><![CDATA[My attempt to decipher the Raft whitepaper and how KRaft implementation adheres to the raft philosophy and techniques.]]></summary></entry><entry><title type="html">Porting Postgres histograms to MySQL (MariaDB): Part 1</title><link href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1.html" rel="alternate" type="text/html" title="Porting Postgres histograms to MySQL (MariaDB): Part 1" /><published>2024-01-09T00:00:00+00:00</published><updated>2024-01-09T00:00:00+00:00</updated><id>/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1</id><content type="html" xml:base="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1.html"><![CDATA[<p>A more accurate title would’ve been porting Postgres’ conditional selectivity to MySQL, but you’d ask me what’s conditional selectivity then! This blog post series will explain both.</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p>I have been hacking around since last week in MySQL/MariaDB hack week (organization courtesy — <a href="https://eatonphil.com/">Phil!</a>) with ~80 odd brilliant hackers. Going into the hack week, my goal was to figure out how a SELECT query works in MariaDB and how its Query Execution Planner(QEP) internally works.</p>
+
+<blockquote>
+  <p>The rough notes that I took through the week around QEP notes can be found here in <a href="https://gist.github.com/uds5501/fbb2f96c24f24c21500926e5ffb35b91">this gist</a>. If you already know about selectivity concept in databases thoroughly, you can skip to part 2, to the actual implementation.</p>
+</blockquote>
+
+<p>During my QEP code read, I realized that all the plans are built around pre-calculated statistics for Tables, Indexes, and Columns (in MySQL). These plans may sometimes utilize histograms to determine the selectivity of rows on un-indexed columns, while I can’t change the QEP algorithm in a week, I sure as hell can implement some data structures! But before we get there in the implementation details, let’s address the elephant in the room.</p>
+
+<h1 id="whats-selectivity">What’s Selectivity?</h1>
+
+<p>Imagine you have the following table</p>
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="n">sample_table</span> <span class="p">(</span>
+  <span class="n">id</span> <span class="nb">INT</span> <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="n">AUTO_INCREMENT</span><span class="p">,</span>
+  <span class="n">i</span> <span class="nb">INT</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+  <span class="n">d</span> <span class="nb">DOUBLE</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">);</span>
+
+<span class="n">CREATE_TABLE</span> <span class="n">sample_inner_table</span> <span class="p">{</span>
+  <span class="n">id</span> <span class="nb">INT</span> <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="n">AUTO_INCREMENT</span><span class="p">,</span>
+  <span class="n">i</span> <span class="nb">INT</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">CREATE</span> <span class="k">INDEX</span> <span class="n">sample_table_d</span> <span class="k">on</span> <span class="n">sample_table</span><span class="p">(</span><span class="n">d</span><span class="p">);</span>
+
+<span class="o">//</span> <span class="n">Imagine</span> <span class="n">sample_table</span> <span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span><span class="n">sample_inner_table</span> <span class="n">has</span> <span class="mi">20</span><span class="p">,</span><span class="mi">000</span><span class="p">,</span><span class="mi">000</span> <span class="k">rows</span><span class="p">.</span>
+</code></pre></div></div>
+
+<p>Now, imagine you run the following query</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">id</span><span class="p">,</span><span class="n">sample_inner_table</span><span class="p">.</span><span class="n">id</span> <span class="k">AS</span> <span class="n">inner_id</span>
+<span class="k">FROM</span> <span class="n">sample_table</span>
+<span class="k">JOIN</span> <span class="n">sample_inner_table</span> <span class="k">ON</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">i</span> <span class="o">=</span> <span class="n">sample_inner_table</span><span class="p">.</span><span class="n">i</span>
+<span class="k">WHERE</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">d</span> <span class="o">&gt;</span> <span class="mi">10</span><span class="p">.</span><span class="mi">0</span>
+  <span class="k">AND</span> <span class="n">sample_inner_table</span><span class="p">.</span><span class="n">id</span> <span class="o">&gt;</span> <span class="mi">5</span>
+  <span class="k">AND</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">i</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Your database’s query planner will try and estimate the following query plans (among other plans)</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*0SeeRgzOIuFgTxJd9uRYAQ.png" alt="Medium-Image" /></p>
+
+<p>To estimate the IO Cost and the number of rows it’ll need to pass on to the join in Select predicates, i.e, <em>σ(id&gt;5)</em> and <em>σ(i=3 AND d&gt;),</em> your database can either use indexes (which it’ll most probably use for <em>σ(d&gt;10)</em> ) or it will use existing histograms / similar data structures to determine how many rows I want to send to the next step, this ratio is called <strong>selectivity</strong> .</p>
+
+<p>Rows sent to the next stage would be $selectivity * totalrows$</p>
+
+<p>You can learn more about it in CMU’s <strong>F2023 #14 — Query Planning &amp; Optimization</strong></p>
+<iframe width="680" height="382" src="https://www.youtube.com/embed/ePGPVJCyCAk" title="F2023 #14 - Query Planning &amp; Optimization (CMU Intro to Database Systems)" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen=""></iframe>
+
+<h1 id="how-does-mariadbmysql-do-it">How does MariaDB/MySQL do it?</h1>
+
+<p>As of <a href="https://github.com/MariaDB/server">MariaDB 11.4</a>, there are 3 histogram implementations, two of them are height-balanced (<strong>SINGLE_PREC_HB</strong>  and <strong>DOUBLE_PREC_HB</strong> ) and by default, they use somewhat new <strong>JSON_HB (</strong> I have a hunch this is already similar to postgres, based on the values but I haven’t checked it’s implementation :) )</p>
+
+<blockquote>
+  <p>Fun Fact: JSON_HB was introduced as a Google Summer of Code Project, as per this <a href="https://jira.mariadb.org/browse/MDEV-28113">JIRA</a>.</p>
+</blockquote>
+
+<p>I will currently take the example of <strong>SINGLE_PREC_HB</strong> and explain how histogram building works in its context.</p>
+
+<p>Imagine the total rows in the table to be <strong>R</strong> , and the histogram width to be <strong>w,</strong> so each bucket in the histogram would take <strong>R/w</strong>  records. In the bucket, however, you’ll be storing the relative position of the current element where the relative position is determined by <code class="language-plaintext highlighter-rouge">(current_element-min_element)/(max_element-min_element)</code>  in the column.</p>
+
+<p>The image below should make more sense 😄
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*jT42VvALhNLqtEMNPr0t7w.png" alt="Medium-Image" /></p>
+
+<p>You can find the algorithm of histogram building below but as an overview, if the current cumulative row count &gt; bucket * capacity, then I’ll set the interval position in this bucket otherwise I’ll proceed to the next distinct element.</p>
+
+<p>Ex: The cumulative count while processing Element 9 would be 6 + 10 + 3 (16).</p>
+
+<div class="link-preview">
+    <a href="https://github.com/MariaDB/server/blob/c0c1c80346b926ea1358aa512374d72d513299b0/sql/sql_statistics.cc" target="_blank">
+        <h4>Histogram_binary_builder::next()- MariaDB/server</h4>
+        <p>MariaDB server is a community developed fork of MySQL server. Started by core members of the original MySQL team...</p>
+        <span class="domain">github.com</span>
+    </a>
+</div>
+
+<p>Now, when you are running the query:</p>
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">sample_table</span> <span class="k">WHERE</span> <span class="n">v</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="k">and</span> <span class="n">v</span> <span class="o">&lt;=</span> <span class="mi">14</span><span class="p">;</span> 
+</code></pre></div></div>
+
+<p>It’ll convert 2 and 14 to respective estimated positions (here, they’ll be <code class="language-plaintext highlighter-rouge">0.00</code>  and <code class="language-plaintext highlighter-rouge">0.6875</code>  respectively). Now, you’ll try and find the buckets where these values can lie. So, your min bucket index will be 1, and the max bucket index will be 7. Hence <strong>the planner can send you rows stored in an estimated 7 buckets!</strong></p>
+
+<p>Since you have a total 10 buckets, the <strong><em>selectivity</em></strong>  becomes <code class="language-plaintext highlighter-rouge">7/10</code>  or <code class="language-plaintext highlighter-rouge">0.700</code>  and the QEP will be returning an estimated <code class="language-plaintext highlighter-rouge">0.700*25</code>  = <strong>18 rows.</strong></p>
+
+<p>This way of estimating selectivity is called <a href="https://github.com/MariaDB/server/blob/11.4/sql/sql_select.cc#L1044"><em>range_selectivity</em></a> !</p>
+
+<h1 id="sweet-but-how-does-postgres-do-it">Sweet! But how does postgres do it?</h1>
+
+<p>Postgres handles different kinds of data types differently, but to keep this discussion simple, we’ll stick with integers. To read the implementation detail better, I’d suggest reading this <a href="https://www.postgresql.org/docs/13/row-estimation-examples.html">row estimation algorithm</a>.</p>
+
+<p>Unlike MySQL, postgres distributes its buckets to hold different value bounds.
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*wLHcMBgfE6QvacHpFppCDg.png" alt="Medium-Image" /></p>
+
+<p>If you notice here, we don’t talk about the frequencies of the element appearing 🤔. We just assume that all the buckets have equal chance of appearing (as MySQL does) and selectivity of an element in a bucket is determined by $(element - \text{min_bound}) / (\text{max_bound}-\text{min_bound})$  , sounds familiar no? 😉</p>
+
+<p>That being said, let’s estimate what happens when we run the query:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SELECT * FROM sample_table WHERE v &gt;= 2 and v&lt;=14;
+</code></pre></div></div>
+
+<p>As we can see, <code class="language-plaintext highlighter-rouge">v&gt;=2 and v&lt;= 14</code> means buckets 1–7 will be completely included in this range and bucket 8 will be partially included.</p>
+
+<p>So, the selectivity shall be $(7+(0/2))/10 = 0.700$</p>
+
+<p>Funny how the selectivity turns out to be the exact same in both histogram layouts no? 🚀</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>I hope you now understand <strong>selectivity</strong> ! I’ll request you to go and play around with this concept first before we move on to the porting implementation details in the <a href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2.html">next blog post</a>.</p>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="databases" /><category term="mysql" /><category term="query-optimization" /><category term="statistics" /><category term="postgres" /><summary type="html"><![CDATA[A more accurate title would’ve been porting Postgres’ conditional selectivity to MySQL, but you’d ask me what’s conditional selectivity then! This blog post series will explain both.]]></summary></entry><entry><title type="html">Porting Postgres histograms to MySQL (MariaDB): Part 2</title><link href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2.html" rel="alternate" type="text/html" title="Porting Postgres histograms to MySQL (MariaDB): Part 2" /><published>2024-01-09T00:00:00+00:00</published><updated>2024-01-09T00:00:00+00:00</updated><id>/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2</id><content type="html" xml:base="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2.html"><![CDATA[<p>Welcome to part 2 of the series, in this post, we’ll discuss implementing a new histogram style inspired by Postgres in MySQL for estimating row selectivity.</p>
+
+<p>By now I am assuming you have understood what is <em>selectivity</em> and its significance. If not, I’d recommend you to read <a href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1.html">part 1</a> for this post to make sense.</p>
+
+<h1 id="tldr-">TLDR 🏃</h1>
+
+<p>In the last post, you noticed how postgres utilizes bounds to create its histogram implementation. I decided to utilize the same idea with a small twist to implement a new histogram style in MySQL called <strong>RANGE_HB (</strong>to be fair, I could’ve thought of a better name but I was half asleep and caffeinated through most of this hack week xD). You can check out the implementation in this branch:</p>
+
+<div class="link-preview">
+    <a href="https://github.com/uds5501/server/tree/new_histogram" target="_blank">
+        <h4>GitHub - uds5501/server at new_histogram</h4>
+        <p>MariaDB server is a community developed fork of MySQL server. Started by core members of the original MySQL team...</p>
+        <span class="domain">github.com</span>
+    </a>
+</div>
+
+<p>It <strong>seems to be giving a better selectivity ratio</strong> <strong>than both existing MySQL and Postgres</strong> implementation (<em>on a sample of 1 table only btw, so don’t take my word for it</em> 😅)</p>
+
+<h1 id="a-new-histogram">A new histogram</h1>
+
+<p>Without further ado, let’s build a new histogram.</p>
+
+<p>For my implementation, I want to merge both ideas, that is, I’ll maintain histogram bounds as the endpoints of a bucket, and in the buckets, I’ll put average running sum (running sum / total sum) instead of assuming equidistant values. To achieve this, I’ll need two things at the point of histogram creation.</p>
+
+<ol>
+  <li>I’ll need the minimum and maximum column values and the histogram width, so typically, the bound would range in<code class="language-plaintext highlighter-rouge">(max-min)/histogram width</code> size.</li>
+  <li>I’ll need the frequency of appearance of all the different values.</li>
+</ol>
+
+<p>Once these conditions are satisfied, my histogram should be able to do three basic things:</p>
+
+<ol>
+  <li>Estimate the <strong><em>range_selectivity</em></strong> between two different values.</li>
+  <li>Estimate the <strong><em>point_selectivity</em></strong> for a particular value (query planner uses that for estimating constant queries)</li>
+  <li>I should be able to print this histogram!</li>
+</ol>
+
+<h2 id="lifecycle-of-a-histogram-for-a-column">Lifecycle of a histogram for a column</h2>
+
+<p>Before we jump into our data structure, let’s try and understand the auxiliary existing ones.</p>
+
+<p>MySQL columns create a tree that maintains the element and the frequency of these elements. For histogram creation, we need to follow a certain lifecycle (described in the image), during the <code class="language-plaintext highlighter-rouge">walk_tree_with_histogram</code> step, we maintain the relevant frequency data in a counter of sorts before finalizing the histogram!</p>
+
+<p>This <code class="language-plaintext highlighter-rouge">walk_tree_with_histogram</code> runs on top of an internal data structure that uniquely holds elements and their frequency in a tree form.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*ep_T2di0YkSqMdyifilVvA.png" alt="The life cycle of a histogram" /></p>
+
+<h2 id="building-the-histogram">Building the histogram</h2>
+
+<p>With the lifecycle out of the way, let’s focus on how would we create one. <code class="language-plaintext highlighter-rouge">Histogram_base</code>is the base class that any histogram has to implement, and our binary will be implementing the same.</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Histogram_range_binary</span> <span class="k">final</span><span class="o">:</span> <span class="k">public</span> <span class="n">Histogram_base</span> <span class="p">{</span>
+  <span class="n">Histogram_type</span> <span class="n">type</span><span class="p">;</span>
+  <span class="kt">size_t</span> <span class="n">size</span><span class="p">;</span> <span class="cm">/* Size of values array, in bytes */</span>
+  <span class="n">uchar</span> <span class="o">*</span><span class="n">values</span><span class="p">;</span>
+  <span class="nl">public:</span>
+    <span class="n">Histogram_range_binary</span><span class="p">()</span> <span class="p">{</span>
+      <span class="n">type</span> <span class="o">=</span> <span class="n">RANGE_HB</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">uint</span> <span class="n">get_width</span><span class="p">()</span> <span class="k">override</span>
+    <span class="p">{</span>
+      <span class="k">return</span> <span class="n">size</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">uint</span> <span class="n">get_size</span><span class="p">()</span> <span class="k">override</span>
+    <span class="p">{</span>
+      <span class="k">return</span> <span class="p">(</span><span class="n">uint</span><span class="p">)</span><span class="n">size</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">Histogram_type</span> <span class="n">get_type</span><span class="p">()</span> <span class="k">override</span> <span class="p">{</span><span class="k">return</span> <span class="n">type</span><span class="p">;}</span>
+    <span class="kt">bool</span> <span class="n">parse</span><span class="p">(</span><span class="n">MEM_ROOT</span> <span class="o">*</span><span class="n">mem_root</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span><span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span><span class="o">*</span><span class="p">,</span> <span class="n">Field</span><span class="o">*</span><span class="p">,</span>
+             <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">hist_data</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">hist_data_len</span><span class="p">)</span> <span class="k">override</span> <span class="p">;</span>
+    <span class="kt">void</span> <span class="n">serialize</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">to_field</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="n">init_for_collection</span><span class="p">(</span><span class="n">MEM_ROOT</span> <span class="o">*</span><span class="n">mem_root</span><span class="p">,</span> <span class="n">Histogram_type</span> <span class="n">htype_arg</span><span class="p">,</span>
+                            <span class="n">ulonglong</span> <span class="n">size</span><span class="p">)</span> <span class="k">override</span> <span class="p">;</span>
+    <span class="n">Histogram_builder</span> <span class="o">*</span><span class="n">create_builder</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">col</span><span class="p">,</span> <span class="n">uint</span> <span class="n">col_len</span><span class="p">,</span>
+                                      <span class="n">ha_rows</span> <span class="n">rows</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">point_selectivity</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">field</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">endpoint</span><span class="p">,</span>
+                           <span class="kt">double</span> <span class="n">avg_sel</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">range_selectivity</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">field</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">min_endp</span><span class="p">,</span>
+                           <span class="n">key_range</span> <span class="o">*</span><span class="n">max_endp</span><span class="p">,</span> <span class="kt">double</span> <span class="n">avg_sel</span><span class="p">)</span> <span class="k">override</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="nf">set_value</span><span class="p">(</span><span class="n">uint</span> <span class="n">i</span><span class="p">,</span> <span class="kt">double</span> <span class="n">val</span><span class="p">)</span> <span class="p">{</span>
+      <span class="p">((</span><span class="n">uint8</span> <span class="o">*</span><span class="p">)</span> <span class="n">values</span><span class="p">)[</span><span class="n">i</span><span class="p">]</span><span class="o">=</span> <span class="p">(</span><span class="n">uint8</span><span class="p">)</span> <span class="p">(</span><span class="n">val</span> <span class="o">*</span> <span class="p">((</span><span class="n">uint</span><span class="p">)</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">));</span>
+    <span class="p">}</span>
+  <span class="k">private</span><span class="o">:</span>
+    <span class="kt">double</span> <span class="nf">get_value_double</span><span class="p">(</span><span class="n">uint</span> <span class="n">i</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="n">DBUG_ASSERT</span><span class="p">(</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">get_width</span><span class="p">());</span>
+      <span class="k">return</span> <span class="p">(((</span><span class="n">uint8</span> <span class="o">*</span><span class="p">)</span> <span class="n">values</span><span class="p">)[</span><span class="n">i</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span> <span class="p">((</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>To give a brief introduction to this class, <code class="language-plaintext highlighter-rouge">Histogram_range_binary</code> will be utilizing an array of <code class="language-plaintext highlighter-rouge">uchar</code> values. Every time a double value has to be set on a certain index, I’ll be setting it as a <code class="language-plaintext highlighter-rouge">uint8</code> , essentially multiplying the value to <code class="language-plaintext highlighter-rouge">(1&lt;&lt;8)-1</code> (see <strong><em>set_value</em></strong> and <strong><em>get_value_double</em></strong>).</p>
+
+<p>I could’ve used the <code class="language-plaintext highlighter-rouge">double*</code> array directly but later on when calculating the range selectivity, it seems that the memory address where I was storing the data, over there some garbage value was re-written, so I decided to hack around and borrow the implementation done by SINGLE_PREC_HB.</p>
+
+<p>Now, once the binary is sorted, we still need to create a builder no? For my use case, I built <code class="language-plaintext highlighter-rouge">Histogram_range_builder</code></p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Histogram_range_builder</span> <span class="o">:</span> <span class="k">public</span> <span class="n">Histogram_builder</span> <span class="p">{</span>
+  <span class="n">Advanced_stats_collector</span> <span class="n">advanced_counter</span><span class="p">;</span> <span class="c1">// Init the new advanced counter here.</span>
+  <span class="n">Field</span> <span class="o">*</span><span class="n">min_value</span><span class="p">;</span>        <span class="cm">/* pointer to the minimal value for the field   */</span>
+  <span class="n">Field</span> <span class="o">*</span><span class="n">max_value</span><span class="p">;</span>        <span class="cm">/* pointer to the maximal value for the field   */</span>
+  <span class="n">Histogram_range_binary</span> <span class="o">*</span><span class="n">histogram</span><span class="p">;</span>  <span class="cm">/* the histogram location                  */</span>
+  <span class="n">uint</span> <span class="n">hist_width</span><span class="p">;</span>         <span class="cm">/* the number of points in the histogram        */</span>
+  <span class="n">uint</span> <span class="n">curr_bucket</span><span class="p">;</span>        <span class="cm">/* number of the current bucket to be built     */</span>  
+  <span class="n">uint</span> <span class="n">curr_ptr</span><span class="p">;</span>           <span class="cm">/* current pointer to tack position */</span>
+<span class="nl">public:</span>
+  <span class="n">Histogram_range_builder</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">col</span><span class="p">,</span> <span class="n">uint</span> <span class="n">col_len</span><span class="p">,</span> <span class="n">ha_rows</span> <span class="n">rows</span><span class="p">)</span>
+    <span class="o">:</span> <span class="n">Histogram_builder</span><span class="p">(</span><span class="n">col</span><span class="p">,</span> <span class="n">col_len</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+  <span class="p">{</span>
+    <span class="n">Column_statistics</span> <span class="o">*</span><span class="n">col_stats</span><span class="o">=</span> <span class="n">col</span><span class="o">-&gt;</span><span class="n">collected_stats</span><span class="p">;</span>
+    <span class="n">min_value</span><span class="o">=</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">min_value</span><span class="p">;</span>
+    <span class="n">max_value</span><span class="o">=</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">max_value</span><span class="p">;</span>
+    <span class="n">histogram</span><span class="o">=</span> <span class="p">(</span><span class="n">Histogram_range_binary</span><span class="o">*</span><span class="p">)</span><span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">histogram</span><span class="p">;</span>
+    <span class="n">hist_width</span><span class="o">=</span> <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">get_width</span><span class="p">();</span>
+    <span class="n">curr_bucket</span><span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">curr_ptr</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="kt">int</span> <span class="nf">next</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="n">elem</span><span class="p">,</span> <span class="n">element_count</span> <span class="n">elem_cnt</span><span class="p">)</span> <span class="k">override</span>
+  <span class="p">{</span>
+    <span class="n">counters</span><span class="p">.</span><span class="n">next</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">elem_cnt</span><span class="p">);</span>
+    <span class="n">advanced_counter</span><span class="p">.</span><span class="n">next</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">elem_cnt</span><span class="p">);</span>
+    <span class="n">column</span><span class="o">-&gt;</span><span class="n">store_field_value</span><span class="p">((</span><span class="n">uchar</span> <span class="o">*</span><span class="p">)</span> <span class="n">elem</span><span class="p">,</span> <span class="n">col_length</span><span class="p">);</span>
+    <span class="kt">double</span> <span class="n">position_in_interval</span> <span class="o">=</span> <span class="n">column</span><span class="o">-&gt;</span><span class="n">pos_in_interval</span><span class="p">(</span><span class="n">min_value</span><span class="p">,</span> <span class="n">max_value</span><span class="p">);</span>
+    <span class="n">advanced_counter</span><span class="p">.</span><span class="n">push_pos</span><span class="p">(</span><span class="n">position_in_interval</span><span class="p">);</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here, as you can notice, it also extends a Histogram_builder base class which contains a basic counter. Largely, you need to understand that this class has a <code class="language-plaintext highlighter-rouge">Advanced_counter</code> which stores the <em>relative position</em> of the element in the tree ( <code class="language-plaintext highlighter-rouge">(element-min) / (max-min)</code> ) and its <em>frequency</em> in two separate arrays, while the basic stat counter, <code class="language-plaintext highlighter-rouge">counters</code> will be storing the <strong><em>total running count, the number of distinct elements, and the number of elements with only single values.</em></strong></p>
+
+<p>Once we have gathered all the data, we will be building the actual histogram in the final step of a histogram lifecycle, called <code class="language-plaintext highlighter-rouge">finalize()</code> . The code might look a bit complicated (fairly because it’s not clean code perse) but on a high level, <strong><em>it’s a two-pointer algorithm</em></strong>.</p>
+
+<p>We’ll go through all the values collected, and see if the current element’s position is within the bucket, if it’s within the bucket then we increase the running sum. If it’s not within the bucket, then we set the running sum to the appropriate bucket, and move the bucket forward till it matches our pointer!</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="n">finalize</span><span class="p">()</span> <span class="k">override</span> 
+<span class="p">{</span>
+  <span class="c1">// here build the histogram.</span>
+  <span class="kt">double</span> <span class="n">bucket_range</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">hist_width</span><span class="p">;</span>
+  <span class="n">ulonglong</span> <span class="n">distinctValues</span> <span class="o">=</span> <span class="n">counters</span><span class="p">.</span><span class="n">get_count_distinct</span><span class="p">();</span>
+  <span class="n">ulonglong</span> <span class="n">totalCnt</span> <span class="o">=</span> <span class="n">counters</span><span class="p">.</span><span class="n">get_count</span><span class="p">();</span>
+  
+  <span class="kt">double</span> <span class="n">default_val</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">;</span>
+  <span class="kt">double</span> <span class="n">pos_min</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">curr_bucket</span><span class="p">;</span>
+  <span class="kt">double</span> <span class="n">pos_max</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">curr_bucket</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+  <span class="kt">double</span> <span class="n">running_pos</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">pos_max</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">pos_max</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="n">ulonglong</span> <span class="n">runningSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="n">curr_ptr</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">curr_ptr</span><span class="o">&lt;</span><span class="n">distinctValues</span><span class="p">;</span> <span class="n">curr_ptr</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">curr_pos</span> <span class="o">=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">pos_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">curr_pos</span> <span class="o">&lt;</span> <span class="n">pos_max</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">runningSum</span> <span class="o">+=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">frequency_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+      <span class="n">running_pos</span> <span class="o">=</span> <span class="n">curr_pos</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">==</span> <span class="n">pos_max</span> <span class="o">&amp;&amp;</span> <span class="n">curr_ptr</span> <span class="o">==</span> <span class="n">distinctValues</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+      <span class="c1">// last bucket.</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">!=</span> <span class="n">running_pos</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">curr_bucket</span> <span class="o">!=</span> <span class="n">hist_width</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">&lt;</span> <span class="n">curr_pos</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+          <span class="k">if</span> <span class="p">(</span><span class="n">running_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">running_pos</span> <span class="o">&lt;</span> <span class="n">pos_max</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kt">double</span> <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span><span class="n">runningSum</span> <span class="o">/</span> <span class="n">totalCnt</span><span class="p">;</span>
+            <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+            <span class="n">runningSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+          <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+            <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">default_val</span><span class="p">);</span>
+          <span class="p">}</span>
+          <span class="n">curr_bucket</span><span class="o">++</span><span class="p">;</span>
+          <span class="n">pos_min</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">curr_bucket</span><span class="p">;</span>
+          <span class="n">pos_max</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">curr_bucket</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+          <span class="k">if</span> <span class="p">(</span><span class="n">pos_max</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">pos_max</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+          <span class="p">}</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+      <span class="n">runningSum</span> <span class="o">+=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">frequency_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+      <span class="n">running_pos</span> <span class="o">=</span> <span class="n">curr_pos</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="c1">// we need to fill the buckets with runningSum till pos_max is again &gt; curr_pos</span>
+      <span class="k">while</span> <span class="p">(</span><span class="n">curr_bucket</span> <span class="o">!=</span> <span class="n">hist_width</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">&lt;</span> <span class="n">curr_pos</span> <span class="o">&amp;&amp;</span> <span class="n">pos_max</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">running_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">running_pos</span> <span class="o">&lt;</span> <span class="n">pos_max</span><span class="p">)</span> <span class="p">{</span>
+          <span class="kt">double</span> <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span><span class="n">runningSum</span> <span class="o">/</span> <span class="n">totalCnt</span><span class="p">;</span>
+          <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+          <span class="n">runningSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+            <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">default_val</span><span class="p">);</span>
+        <span class="p">}</span>
+        <span class="n">curr_bucket</span><span class="o">++</span><span class="p">;</span>
+        <span class="n">pos_min</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">curr_bucket</span><span class="p">;</span>
+        <span class="n">pos_max</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">curr_bucket</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">pos_max</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+          <span class="n">pos_max</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">curr_pos</span> <span class="o">&gt;=</span> <span class="n">pos_min</span> <span class="o">&amp;&amp;</span> <span class="n">curr_pos</span> <span class="o">&lt;=</span> <span class="n">pos_max</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="n">runningSum</span> <span class="o">+=</span> <span class="n">advanced_counter</span><span class="p">.</span><span class="n">frequency_at</span><span class="p">(</span><span class="n">curr_ptr</span><span class="p">);</span>
+        <span class="n">running_pos</span> <span class="o">=</span> <span class="n">curr_pos</span><span class="p">;</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">curr_ptr</span> <span class="o">==</span> <span class="n">distinctValues</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="kt">double</span><span class="p">)</span><span class="n">runningSum</span> <span class="o">/</span> <span class="n">totalCnt</span><span class="p">;</span>
+    <span class="n">histogram</span><span class="o">-&gt;</span><span class="n">set_value</span><span class="p">(</span><span class="n">curr_bucket</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+    <span class="n">curr_bucket</span><span class="o">++</span><span class="p">;</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="implementing-the-range_selectivity">Implementing the range_selectivity()</h2>
+
+<p>Once the histogram is built, we have to implement the actual range selectivity. I have borrowed the existing histogram algorithm to find the relative position of the elements.</p>
+
+<p>After that, I try and figure out the buckets that will be the bounds for the minimum and maximum position (again, could’ve used a binary search but since the maximum histogram width itself is <strong><em>256,</em></strong> why bother optimizing an O(1)? ) Once they are found, all we need to do is add up the values present in each bucket and return that.</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">double</span> <span class="n">Histogram_range_binary</span><span class="o">::</span><span class="n">range_selectivity</span><span class="p">(</span><span class="n">Field</span> <span class="o">*</span><span class="n">field</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">min_endp</span><span class="p">,</span> <span class="n">key_range</span> <span class="o">*</span><span class="n">max_endp</span><span class="p">,</span> <span class="kt">double</span> <span class="n">avg_sel</span><span class="p">)</span> <span class="p">{</span>
+  <span class="kt">double</span> <span class="n">sel</span><span class="p">,</span> <span class="n">min_mp_pos</span><span class="p">,</span> <span class="n">max_mp_pos</span><span class="p">;</span>
+  <span class="n">Column_statistics</span> <span class="o">*</span><span class="n">col_stats</span><span class="o">=</span> <span class="n">field</span><span class="o">-&gt;</span><span class="n">read_stats</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">min_endp</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="p">(</span><span class="n">field</span><span class="o">-&gt;</span><span class="n">null_ptr</span> <span class="o">&amp;&amp;</span> <span class="n">min_endp</span><span class="o">-&gt;</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+  <span class="p">{</span>
+    <span class="n">store_key_image_to_rec</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="p">(</span><span class="n">uchar</span> <span class="o">*</span><span class="p">)</span> <span class="n">min_endp</span><span class="o">-&gt;</span><span class="n">key</span><span class="p">,</span>
+                           <span class="n">field</span><span class="o">-&gt;</span><span class="n">key_length</span><span class="p">());</span>
+    <span class="n">min_mp_pos</span><span class="o">=</span>
+        <span class="n">field</span><span class="o">-&gt;</span><span class="n">pos_in_interval</span><span class="p">(</span><span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">min_value</span><span class="p">,</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">max_value</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="k">else</span>
+    <span class="n">min_mp_pos</span><span class="o">=</span> <span class="mf">0.0</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">max_endp</span><span class="p">)</span>
+  <span class="p">{</span>
+    <span class="n">store_key_image_to_rec</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="p">(</span><span class="n">uchar</span> <span class="o">*</span><span class="p">)</span> <span class="n">max_endp</span><span class="o">-&gt;</span><span class="n">key</span><span class="p">,</span>
+                           <span class="n">field</span><span class="o">-&gt;</span><span class="n">key_length</span><span class="p">());</span>
+    <span class="n">max_mp_pos</span><span class="o">=</span>
+        <span class="n">field</span><span class="o">-&gt;</span><span class="n">pos_in_interval</span><span class="p">(</span><span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">min_value</span><span class="p">,</span> <span class="n">col_stats</span><span class="o">-&gt;</span><span class="n">max_value</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="k">else</span>
+    <span class="n">max_mp_pos</span><span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+  
+  <span class="kt">double</span> <span class="n">bucket_range</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">get_width</span><span class="p">();</span>
+  <span class="n">uint</span> <span class="n">bucket</span><span class="p">,</span> <span class="n">bucket_min</span><span class="p">,</span> <span class="n">bucket_max</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="n">bucket</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">bucket</span> <span class="o">&lt;</span> <span class="n">get_width</span><span class="p">();</span> <span class="n">bucket</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">min_pos</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="n">bucket</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">max_pos</span> <span class="o">=</span> <span class="n">bucket_range</span> <span class="o">*</span> <span class="p">(</span><span class="n">bucket</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">max_pos</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">max_pos</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">min_mp_pos</span> <span class="o">&gt;=</span> <span class="n">min_pos</span> <span class="o">&amp;&amp;</span> <span class="n">min_mp_pos</span> <span class="o">&lt;</span> <span class="n">max_pos</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">bucket_min</span> <span class="o">=</span> <span class="n">bucket</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">max_mp_pos</span> <span class="o">&gt;=</span> <span class="n">min_pos</span> <span class="o">&amp;&amp;</span> <span class="n">max_mp_pos</span> <span class="o">&lt;</span> <span class="n">max_pos</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">bucket_max</span> <span class="o">=</span> <span class="n">bucket</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">max_mp_pos</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">bucket_max</span> <span class="o">=</span> <span class="n">get_width</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">min_mp_pos</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">bucket_min</span> <span class="o">=</span> <span class="n">get_width</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="n">sel</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="n">uint</span> <span class="n">i</span> <span class="o">=</span> <span class="n">bucket_min</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;=</span><span class="n">bucket_max</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">sel</span> <span class="o">+=</span> <span class="n">get_value_double</span><span class="p">(</span><span class="n">i</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="n">sql_print_information</span><span class="p">(</span><span class="s">"[histogram_range_binary::range_sel] avg_sel: %f, range_sel: %f"</span><span class="p">,</span> <span class="n">avg_sel</span><span class="p">,</span> <span class="n">sel</span><span class="p">);</span>
+  <span class="n">set_if_bigger</span><span class="p">(</span><span class="n">sel</span><span class="p">,</span> <span class="n">avg_sel</span><span class="p">);</span>
+  <span class="k">return</span> <span class="n">sel</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="estimation-accuracy">Estimation Accuracy</h2>
+
+<p>The algorithm sounds good but let’s see how it performs. I’ll be building a similar table which we used in the last example to check the selectivity given by this histogram.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*lAgFnHx37KeQb5uwBoRq0g.png" alt="The histogram on demo table" /></p>
+
+<p>The <code class="language-plaintext highlighter-rouge">demo</code> table above is using RANGE_HB histogram with size 10.</p>
+
+<p>However, the selectivity is <strong><em>~0.8</em></strong> in our histogram’s case, which means it’ll suggest the query planner to return <code class="language-plaintext highlighter-rouge">0.8 * 25 = 20</code> rows instead of 18 in the other two implementations, <strong><em>which means that this implementation gives more accurate estimations!</em></strong> (For this use case at least)</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*U8A76tcEYSG1ibsiGuB2Bw.png" alt="Range selectivity" /></p>
+
+<h2 id="displaying-the-histogram">Displaying the histogram</h2>
+
+<p>The math is done, now time to show the world what we are doing. I modified the existing display function to show actual values on each bucket instead of the delta of the last bucket (you can check out the implementation in the GitHub repository linked at the top).</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*V29sH8EqOPmENGryBAfcmg.png" alt="Histogram display" /></p>
+
+<p>For the sake of this demo, I created another table <code class="language-plaintext highlighter-rouge">imported_csv</code> and used the histogram there as well, as you can see in the buckets where there is no value, the sum is plain $0.000$!</p>
+
+<h1 id="caveats-disclaimers">Caveats (Disclaimers)</h1>
+
+<blockquote>
+  <p>While the implementation looks smooth, like <a href="https://www.cs.cmu.edu/~pavlo/">Andy Pavlo</a> says, <em>there are no free lunches in software engineering</em>!</p>
+</blockquote>
+
+<p>There are a couple of bugs where I am not sure how this histogram or the server itself will behave, let’s talk about them.</p>
+
+<ul>
+  <li>In the native implementations, you didn’t need each position and frequency separately, you just needed a running sum of the elements which ensured that your builder didn’t consume an array worth of memory. In my implementation, with the introduction of 2 vectors in the <code class="language-plaintext highlighter-rouge">Advanced_Counter</code> , it might consumer instance/program memory when there are let’s say millions of distinct values.</li>
+  <li>During the <code class="language-plaintext highlighter-rouge">walk_tree_with_histogram</code> step, it’s required to delete the histogram builder pointer and free up that memory <em>manually</em>. Due to some issue, this memory pointer was already deallocated before I could free it up myself. For now, the pointer deletion has been commented out… so, after a few large histograms, <strong><em>your server is bound to crash in the current state</em></strong>. (welp! send a fix if anyone can help 😢)</li>
+</ul>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>In all, this hack helped me gain a deeper insight and appreciation of how query planner internally functions in MySQL source and how could I help it estimate the row selectivity <em>slightly better</em> with tradeoffs! I’ll mess around with its kernel while trying to solve an existing issue in the future maybe, for now, adios!</p>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="databases" /><category term="mysql" /><category term="query-optimization" /><category term="statistics" /><category term="postgres" /><summary type="html"><![CDATA[Welcome to part 2 of the series, in this post, we’ll discuss implementing a new histogram style inspired by Postgres in MySQL for estimating row selectivity.]]></summary></entry><entry><title type="html">Bustub’s extendible hash tables (CMU-15445)</title><link href="/2023/11/23/bustub-extendible-hash-table.html" rel="alternate" type="text/html" title="Bustub’s extendible hash tables (CMU-15445)" /><published>2023-11-23T00:00:00+00:00</published><updated>2023-11-23T00:00:00+00:00</updated><id>/2023/11/23/bustub-extendible-hash-table</id><content type="html" xml:base="/2023/11/23/bustub-extendible-hash-table.html"><![CDATA[<p>Welcome to my take on the implementation of extendible hash tables (minus the code btw, owning to the educational policies)</p>
+
+<h1 id="motivation">Motivation</h1>
+
+<p>I have been recently getting my hands dirty with C++ internal semantics and the implementation of different kinds of database internals and “the learning curve is steep” is an understatement, <em>exhibit A</em>—</p>
+
+<div class="jekyll-twitter-plugin"><blockquote class="twitter-tweet"><p lang="en" dir="ltr">I DID IT 😭<br />I FINALLY DID IT.<br />SO MANY DAYS THINKING MY LOGIC WAS WRONG. I WAS JUST USING THE GODDAMN WRONG HASH FUNCTION I WANNA CRY.<br /><br />My tomorrow&#39;s gym session is fucked but AT LEAST I got it right 😭 <a href="https://t.co/cIWisF95yM">pic.twitter.com/cIWisF95yM</a></p>&mdash; Uddeshya Singh (@uds5501) <a href="https://twitter.com/uds5501/status/1728920117839622408?ref_src=twsrc%5Etfw">November 26, 2023</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+</div>
+
+<p>In this post, I will be discussing the implementation (overview) of the Bustub <strong>extendible hashtable index insertions</strong>. For some context, <a href="https://15445.courses.cs.cmu.edu/fall2023/"><strong>CMU-15445</strong></a> is an excellent course that stands out for its comprehensive approach to database systems. Its unique blend of theoretical foundations and practical applications provides students with a solid understanding of the intricacies involved in managing and building data stores.</p>
+
+<p>Personally, this is my second attempt at this course, and making some headway has been amazing. For this post, we’ll be discussing Project 2 (<a href="https://15445.courses.cs.cmu.edu/fall2023/project2/">Hash Index</a>), building our own hash index using extendible hash tables!</p>
+
+<p>I tried my best to figure out a good source to discuss this particular assignment but there didn’t seem to be a lot many articles in English. A few notable ones that I came across were :</p>
+
+<ul>
+  <li><a href="https://jameywoo.github.io/post/cmu15-445/project2-extendible-hash-index/#task-2---hash-table-implementation">https://jameywoo.github.io/post/cmu15-445/project2-extendible-hash-index/#task-2—hash-table-implementation</a></li>
+  <li><a href="https://auzdora.github.io/2023/03/22/Extendible_Hash_Table/">https://auzdora.github.io/2023/03/22/Extendible_Hash_Table/</a></li>
+</ul>
+
+<h1 id="eh-so-whats-hashing"><strong>Eh, so what’s hashing?</strong></h1>
+
+<p>For the uninitiated, a hashtable in simplest terms is a key value store data structure in which, before inserting a key, you’d hash it (which will decide in which bucket will this key land) and store it. Primarily, you’d have three simple operations for the hash table which are:</p>
+
+<ol>
+  <li>Insert(key, value)</li>
+  <li>Delete(key)</li>
+  <li>Get(key)</li>
+</ol>
+
+<p>As you can think, there might be multiple approaches to achieve this, we can broadly categorize them into a couple of sections <strong>static</strong> and <strong>dynamic</strong> hash tables.</p>
+
+<h2 id="static-hash-tables">Static Hash Tables</h2>
+
+<p>The general theme of these hashtables is that they will have a <strong>fixed number of slots</strong> and differ in the way they handle <em>collisions</em> and <em>deletions</em>.</p>
+
+<p>Some of the techniques are</p>
+
+<p><strong>Linear Probing</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*aDXjf5kzPTYa8QM6dw7AgQ.png" alt="captionless image" /></p>
+
+<ul>
+  <li><em>Inserts</em>: Hashes the key to an index and if the slot is already full, moves on to the next one linearly and loops around if reaches the end of the array.</li>
+  <li><em>Deletes</em>: You can put tombstones on the slots after deletion, this will be treated as an open slot during insertion and will be ignored during key lookup.</li>
+</ul>
+
+<p><strong>Robin Hood Hashing</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*NY_H1vSVpAuHA_YYFS3IaA.png" alt="captionless image" /></p>
+
+<ul>
+  <li><em>Inserts</em>: The insertion here is a bit weird… If the hashed slot is free, we’ll insert the key right here. But if it isn’t, we’ll linearly go down and pick the first slot according to:
+    <ol>
+      <li><strong><em>Is the slot free</em></strong>? If yes just put the new key there and also store how far was it from the original index.</li>
+      <li><strong><em>If not</em></strong>, then check if the current key is farther from its hashed slot. If not, then this new key will take its place and the old key will be pushed further.</li>
+    </ol>
+  </li>
+</ul>
+
+<h2 id="dynamic-hash-tables">Dynamic Hash Tables</h2>
+
+<p>The theme here is that we can increase and decrease the overall size of the hashtables according to a fixed set of constraints, ideally, you can fit any number of keys if you let the data structure grow further enough without complete key reallocation.</p>
+
+<p><strong>Chained Hashing</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*O7oNs1KBJhZSMmphptSlZQ.png" alt="captionless image" /></p>
+
+<p><em>Insertion</em>: Each key is hashed to a slot and every key is chained in a linked list. It could grow infinitely large but the searching complexity would be really bad. (Could be linear if all the keys are getting hashed to only a few buckets)</p>
+
+<h1 id="finally-extendible-hash-tables"><strong>Finally, Extendible Hash Tables</strong></h1>
+
+<p>Our project two assignment was to create an extendible hash table (with a slight twist). A general extendible hash table would utilize the <em>global</em> and <em>local depths</em> to determine the bucket where the key should land and local depths to check how many bucket slots would point to this bucket.</p>
+
+<p>We follow this general rule during insertion:</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*9L4o2SMjWsO0C2jiyytTLQ.png" alt="Insertion process for extendible hash tables." /></p>
+
+<p><em>The above diagram’s slightly complicated ya?</em> I agree, let me help and explain the overall idea. When you are inserting a key, you’d first check if there’s an appropriate empty bucket where the table could keep the key. If there’s some space, just push the key and forget.</p>
+
+<p>If there’s no space though, you’d want to either expand the bucket or expand the table and make some space, for that to happen, you’ll</p>
+
+<ul>
+  <li>First, verify if the bucket you want to push the key in has <strong>local_depth &lt; global_depth</strong><em>.</em> If that’s the case, you can just split the bucket in two and insert the new key accordingly.</li>
+  <li>Second, if the <code class="language-plaintext highlighter-rouge">local_depth==global_depth</code> you would want to expand the directory by incrementing the global depth.</li>
+</ul>
+
+<p>Let’s list down the type of fundamental database pages involved one by one and later on dry-run with an example.</p>
+
+<h2 id="header-page">Header Page</h2>
+
+<p>A single header page will have multiple directory pages. You can route the hashed keys according to the <strong>most significant bits</strong> (I will show that in the dry run) to a particular directory page. You could imagine this as a <em>phone book of directories</em>.</p>
+
+<h2 id="directory-page">Directory Page</h2>
+
+<p>A single directory page will contain multiple buckets and each directory page will have the concept of</p>
+
+<ol>
+  <li><strong>Maximum depth</strong>: The maximum size a directory can expand to</li>
+  <li><strong>Global depth</strong>: The current depth of the directory. A directory can support a maximum of <code class="language-plaintext highlighter-rouge">1&lt;&lt;global_depth</code> buckets.</li>
+</ol>
+
+<p>You’ll route the hashed keys to different buckets according to the <strong>least significant bits</strong>. (again, will show an example!)</p>
+
+<h2 id="bucket-page">Bucket Page</h2>
+
+<p>The bucket page will contain the key-value pairs. Each bucket will have:</p>
+
+<ol>
+  <li><strong>Maximum size</strong>: Total number of keys allowed.</li>
+  <li><strong>Local depth:</strong> This local depth is used to determine whether a key is supposed to stay in this bucket or not during bucket split/merge. In a directory, <code class="language-plaintext highlighter-rouge">exp(2, global_depth-local_depth)</code> slots will be pointing to this bucket btw!
+It’s also used to check during a bucket split, whether the keys that are present should stay or be migrated to a new bucket.</li>
+</ol>
+
+<h2 id="example">Example</h2>
+
+<p>Now, let’s consider the following scenario, We have the hashtable configuration as:</p>
+
+<ul>
+  <li><strong>header_depth = 1</strong></li>
+  <li><strong>maximum_global_depth = 3</strong></li>
+  <li><strong>maximum_bucket_size = 2</strong></li>
+</ul>
+
+<p>The keys and values will be <code class="language-plaintext highlighter-rouge">uint32</code> and for demo’s sake, let’s assume our hash function is <code class="language-plaintext highlighter-rouge">Hash(x) = x</code> (<em>I know, pretty catastrophic</em> 😅)</p>
+
+<p>Now, in this hashtable, let’s perform the following operations.</p>
+
+<h2 id="operation-1--insert-23-23">Operation 1 — Insert &lt;23, 23&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*HTGcs5jFsExamqX53t0qYw.png" alt="Inserting key=23 in hashtable" /></p>
+
+<p>Two salient features I’ll ask you to focus on are the following steps:</p>
+
+<ul>
+  <li><strong>Step 2</strong>: When we are routing the key to the correct directory, we use the most significant bits of the hash to the resolution of the required bits, hence only the bold bits were required in directory routing bit: <strong>1</strong>0111,</li>
+  <li><strong>Step 5</strong>: Routing to the correct bucket, we use the least significant bits and the global depth. Well, right now the global depth of the directory is 0 so everything goes to the single slot!</li>
+</ul>
+
+<h2 id="operation-2--insert-77">Operation 2- Insert &lt;7,7&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*66EkNxbjAolRTNZkAND9oQ.png" alt="Inserting key=7 in the extendible hash table" /></p>
+
+<p>The only thing different from the last example is that it got routed to the <em>0th</em> header slot rather than the <em>1th</em>! Else, it’s business as usual.</p>
+
+<h2 id="operation-3-inserting-19-19">Operation 3: Inserting &lt;19, 19&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*pTWpPxMxCKgyVGrXW9qMgw.png" alt="Inserting key 19 to hashtable" /></p>
+
+<p>yes yes yes, I cut a few corners in this step but it’s pretty self-explanatory! We routed the request to the directory at header[1] and the only bucket present in the bucket following the old rules.</p>
+
+<h2 id="operation-4-inserting-20-20">Operation 4: Inserting &lt;20, 20&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*UbfEyhvM_Xqh7GrN4z4xXA.png" alt="Inserting 20 in hashtable" /></p>
+
+<p>Now this is where things get interesting… 😋</p>
+
+<p>You can’t insert the new key in the old bucket because it’s full, this is where the <em>extensibility</em> of this hash table comes in handy!</p>
+
+<p>Since <code class="language-plaintext highlighter-rouge">local_depth == global_depth &amp;&amp; lobal_depth++ &lt; maximum_global_depth</code> , we have to expand this directory. During expansion, we create a new <code class="language-plaintext highlighter-rouge">1th</code> index which is initially not pointed to anything, How do we figure out where should this new slot point to? I used the below-mentioned hacky algorithm to figure it out. (Kindly note, this ain’t the most elegant algorithm around to tackle this problem btw).</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="n">ExtendibleHTableDirectoryPage</span><span class="o">::</span><span class="n">IncrGlobalDepth</span><span class="p">()</span> <span class="p">{</span>
+  <span class="n">LOG_DEBUG</span><span class="p">(</span><span class="s">"----Increasing global depth-----"</span><span class="p">);</span>
+  <span class="c1">// assert(global_depth_+1 &lt;= max_depth_);</span>
+  <span class="n">global_depth_</span><span class="o">++</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">global_depth_</span><span class="p">);</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">==</span> <span class="n">INVALID_PAGE_ID</span><span class="p">)</span> <span class="p">{</span>
+      <span class="c1">// 0XXXX or 1XXXX needs to point to same bucket as  --&gt; XXXX</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">LOG_DEBUG</span><span class="p">(</span><span class="s">"Found invalid page id at %u, pointing it to %u's data"</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">^</span> <span class="mi">1</span><span class="p">);</span>
+        <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span> <span class="o">^</span> <span class="mi">1</span><span class="p">];</span>
+        <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span> <span class="o">^</span> <span class="mi">1</span><span class="p">];</span>
+      <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">right_shift_mask</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">global_depth_</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+          <span class="n">right_shift_mask</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">global_depth_</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+          <span class="n">right_shift_mask</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="n">global_depth_</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="n">LOG_DEBUG</span><span class="p">(</span><span class="s">"Found invalid page id at %u, pointing it to %u's data"</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">&amp;</span> <span class="n">right_shift_mask</span><span class="p">);</span>
+        <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span> <span class="o">&amp;</span> <span class="n">right_shift_mask</span><span class="p">];</span>
+        <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span> <span class="o">&amp;</span> <span class="n">right_shift_mask</span><span class="p">];</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Once the directory expansion is taken care of, we start the second task, actually splitting the older bucket and migrating keys accordingly.</p>
+
+<p>Since <code class="language-plaintext highlighter-rouge">directory[0] = old_bucket</code> , we’ll ensure the following:</p>
+
+<ul>
+  <li>The new bucket is accessible by the appropriate index in the directory.</li>
+  <li>The keys present in the old bucket should stay if they satisfy the <code class="language-plaintext highlighter-rouge">key &amp;((1 &lt;&lt; local_depth)-1)</code></li>
+</ul>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Kindly note that this is just a dummy run about insertions in extendible hash tables. The <em>Get</em> and <em>Remove</em> operations will follow similar suites.</p>
+
+<p>There are many more internal operations required in the project, which were not covered in this blog, to name a couple:</p>
+
+<ul>
+  <li><strong>Resize</strong> (merge) multiple buckets into one upon removal of enough keys and subsequently shrink the directory pages.</li>
+  <li>To <strong>ensure concurrent access</strong>, you can apply appropriate read and write latches on the pages.</li>
+</ul>
+
+<p>I hope I could give you guys a gist of the beauty of an extendable hashtable index in terms of dynamic reallocation. To understand more, I’d recommend you to watch <a href="https://youtu.be/eBgKVqFUUlA?si=3UYQ-GLuo1YRIOGc&amp;t=3581">this lecture</a> by Mr. Pavlo.</p>
+
+<p>PS: I will update this post further as I progress with the above-mentioned requirements :)</p>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="databases" /><category term="cmu-15445" /><category term="hash-tables" /><summary type="html"><![CDATA[Welcome to my take on the implementation of extendible hash tables (minus the code btw, owning to the educational policies)]]></summary></entry><entry><title type="html">The curious case of MongoDB cache evictions</title><link href="/2023/07/23/curious-case-of-mongo-cache-evictions.html" rel="alternate" type="text/html" title="The curious case of MongoDB cache evictions" /><published>2023-07-23T00:00:00+00:00</published><updated>2023-07-23T00:00:00+00:00</updated><id>/2023/07/23/curious-case-of-mongo-cache-evictions</id><content type="html" xml:base="/2023/07/23/curious-case-of-mongo-cache-evictions.html"><![CDATA[<p>MongoDB is an extremely popular no SQL database solution with an interesting cache architecture. Tons of projects use MongoDB in production including ours at GoTo Financial. It has been working perfectly for quite some time until came to a point when it suddenly wasn’t and this small post is all about our misadventures with MongoDB.</p>
+
+<blockquote>
+  <p>TL;DR</p>
+
+  <p>Operational latency spikes occur due to application threads being involved in cache evictions. To avoid the same, increase the eviction workers or the cache triggers involved. Read on to understand the cache structure and workflow in detail.</p>
+</blockquote>
+
+<h1 id="the-incident">The incident</h1>
+
+<p>Considering that we are a public company, I don’t think I can replicate the RCA in a public blog but let’s try and imagine a close scenario.</p>
+
+<h2 id="use-case">Use case</h2>
+
+<p>Imagine you are building a small ticket reservations system where you want to keep the tickets saved for long (maybe for showing your users their past flights). You can perform updates on the tickets or create new tickets and maybe delete the tickets after a few months and you are saving all these tickets in some MongoDB collection (call it <strong>tickets</strong>).</p>
+
+<p>Now, one odd day your monitoring systems start alerting you that your tickets are not being fetched or stored at all!</p>
+
+<h2 id="debugging-the-alerts-️️">Debugging the alerts 🕵️‍♂️</h2>
+
+<p>You start digging and find out that you are facing spikes in operational latencies with your operations rising up to whopping <strong>16s!</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*SnmOncrL-yJIWZ_Chn5A3w.png" alt="Spike in operational latencies" /></p>
+
+<h2 id="why-a-sudden-spike-in-operational-latency-">Why a sudden spike in operational latency? 🤔</h2>
+
+<p>You scour through the rest of the metrics and find out there’s a minor bump coincidentally occurring at the same time as this operational latency, The time overlap and spike patterns are uncanny, this spike in <strong>Pages evicted by application threads</strong> has to be the culprit!</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*KjRxX3xNJxNVpS7it-p5LQ.png" alt="captionless image" /></p>
+
+<h2 id="alright-but-what-are-these-application-threads-and-why-them-evicting-pages-is-so-chaotic-">Alright, but what are these application threads, and why them evicting pages is so chaotic? 🤯</h2>
+
+<p>This is the point where I have to introduce <a href="https://source.wiredtiger.com/11.1.0/index.html">wiredTiger[1],</a> it’s MongoDB’s principal database storage engine. This layer decides how to store your collections, fetch them, build indexes around them, cache them, evict the pages from caches, etc, essentially the heart and soul of I/O in MongoDB.</p>
+
+<p>WiredTiger maintains information in the cache for its internal data structures to save / load / manipulate them to support appropriate MongoDB operations.</p>
+
+<p>To evict these pages from the cache wiredTiger has an <strong>eviction server</strong> that spawns <strong>4 eviction threads</strong> pre-configured in MongoDB whose sole responsibility is to maintain wiredTiger’s cache usage at a set of <a href="https://source.wiredtiger.com/11.0.0/arch-eviction.html#eviction_overall">certain targets[2]</a> ( <code class="language-plaintext highlighter-rouge">**eviction_target**</code> , <code class="language-plaintext highlighter-rouge">**eviction_dirty_target**</code> and <code class="language-plaintext highlighter-rouge">**eviction_updates_target**</code>) In contrast, <strong>application threads</strong> are nothing but threads by MongoDB to perform client operations and serve requests.</p>
+
+<p><strong>Generally, your cache won’t grow to a point where you need to know anything more than this, but alas! your <em>ticket collection</em> wasn’t that lucky.</strong></p>
+
+<p>WiredTiger internally maintains 3 triggers, and if your MongoDB installation triggers any of the conditions, application threads will be pulled in to evict the pages from the cache.</p>
+
+<ol>
+  <li>If the cache bytes stored in wiredTiger cache (which itself is <a href="https://www.mongodb.com/docs/manual/core/wiredtiger/#memory-use">~50% of the machine RAM[3]</a>) grows to a point that <strong>95% (</strong><code class="language-plaintext highlighter-rouge">**eviction_trigger**</code><strong>)</strong>of the WT Cache is occupied.</li>
+  <li>If the amount of dirty pages in the cache comprises <strong>20%</strong> ( <code class="language-plaintext highlighter-rouge">**eviction_dirty_trigger**</code>) of the WT cache.</li>
+  <li>If the amount of <a href="https://jira.mongodb.org/browse/WT-6175">update bytes[4]</a> in the cache comprises <strong>10% (</strong> <code class="language-plaintext highlighter-rouge">**eviction_updates_trigger**</code><strong>)</strong> of the WT cache.</li>
+</ol>
+
+<p>Let’s suppose our culprit is <strong>number 3!</strong> Your tickets collection being a write-heavy setup, the insert/update operations were overwhelming the database and the update bytes were intermittently crossing <strong>10.0%-10.1%</strong> and then dropping to a lower value after application threads were pulled in.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*bEUrZTaaIJewL-nrsW2iRw.png" alt="Update bytes crossing 10% trigger" /></p>
+
+<h2 id="why-are-the-update-bytes-growing-that-much-and-not-being-maintained-at-their-target">Why are the update bytes growing that much and not being maintained at their target?</h2>
+
+<p>For this, we need to deep dive into the cache maintenance and architecture discussed below:</p>
+
+<h1 id="wiredtiger-cache-architecture--️">WiredTiger Cache architecture 🏗 ️</h1>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*fP6R41XKi4xvqF0eFVYq6w.png" alt="__wt_cache struct" /></p>
+
+<p>WiredTiger internally maintains a cache in a data structure called <a href="https://github.com/wiredtiger/wiredtiger/blob/develop/src/include/cache.h#L62-L240"><strong>__<em>wt_cache</em>[5]</strong></a><strong>.</strong></p>
+
+<p>The <strong>green variables determine the byte counts of different kinds of pages present in the cache</strong> <em>(Note, these are not always accurate and these memory footprints are updated only during B-tree/row/column operations).</em></p>
+
+<p>The <code class="language-plaintext highlighter-rouge">**bytes_updates**</code> is our problem figure.</p>
+
+<p>The <strong>variables in dark blue are the targets and triggers</strong> derived from configs.</p>
+
+<p>The <strong>variables in purple</strong> determine the data related to eviction progress:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">**evict_pass_lock**</code><strong>,</strong> <code class="language-plaintext highlighter-rouge">**walk_session**</code>and <code class="language-plaintext highlighter-rouge">**walk_tree**</code>are B-tree related locks and sessions from where pages will be populated for eviction</li>
+  <li><code class="language-plaintext highlighter-rouge">**evict_queue_lock**</code> <strong>,</strong> <code class="language-plaintext highlighter-rouge">**evict_queues**</code> <strong>,</strong><code class="language-plaintext highlighter-rouge">***evict_urgent_queue**</code> etc are the locks and eviction queues in which pages are pushed to be later on evicted by the eviction/application threads.</li>
+</ul>
+
+<p>As mentioned above, only data structures have the ability to change the memory footprint in <code class="language-plaintext highlighter-rouge">__wt_cache</code> , so we need to figure out how eviction threads and B-Tree’s cache memory manipulation link together. Let’s find out with the figure given below :</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:4800/format:webp/1*XBFbRyCOHPMaohUrgIEWYw.png" alt="cache eviction architecture diagram" /></p>
+
+<p>Color coding guide to the above diagram-</p>
+
+<ul>
+  <li>The boxes in <strong>blue</strong> are the elements that are generally invoked on <strong>connection startup.</strong></li>
+  <li><strong>Dark green</strong> boxes elaborate the <strong>function calls invoked by the eviction server</strong> to start an eviction thread group and start a thread to begin LRU evictions.</li>
+  <li><strong>Brown</strong> boxes elaborate the <strong>work done by a single thread</strong> which spawns multiple workers, adds pages to eviction queues, and finally evicts pages [Note, page addition to queues warrants a separate blog of its own]</li>
+  <li><strong>Purple</strong> boxes explain what happens when a <strong>page is finally picked</strong> for eviction.</li>
+  <li>The <strong>red</strong> boxes show where does <strong>B-Tree page discard</strong> functionality pitch in and update the cache structure!</li>
+</ul>
+
+<p>If we follow the flow given in the above diagram, we’ll reach the <a href="https://github.com/wiredtiger/wiredtiger/blob/fe22c23199fd0f6462a148c51b0a9694857a19bc/src/btree/bt_discard.c#L57-L141">__wt_page_out[6]</a> function which is triggered after page eviction. This function is responsible for updating the cache footprint of this page and later on freeing page modification information, both in memory and on disk.</p>
+
+<p>This is how your pages are evicted and memory is freed from the cache. To answer the earlier question we posed that <strong><em>why are update cache percentages not being maintained at their target?</em></strong> There could be multiple scenarios but one hypothesis highly likely hypothesis is:</p>
+
+<ul>
+  <li>Suppose there are &gt; 2 million pages in your cache due to inserts/updates in collections, when LRU eviction walk happens, only 100–200 pages are pushed in the regular queue for eviction. [<em>Again, need a separate blog post to explain how does LRU page queue walk happens</em>]</li>
+  <li>Unless more pages are not urgently evicted, it’ll create back pressure on your cache because the write traffic is more or less constant.</li>
+  <li>The pages when they are evicted, aren’t guaranteed to have <code class="language-plaintext highlighter-rouge">bytes_updates</code> component associated with them.</li>
+  <li>Hence the increase in <code class="language-plaintext highlighter-rouge">bytes_updates</code> is more than the reduction in the same, which keeps growing to a point where B-Trees take the matter into their own hands and evict pages.</li>
+</ul>
+
+<p>Now the question which arises is <strong>how to tackle these intermittent operation spikes.</strong></p>
+
+<h2 id="possible-remedies-">Possible remedies 🧪</h2>
+
+<ul>
+  <li>You could try increasing eviction workers from default 4 to a maximum of 20 as described in this <a href="https://www.percona.com/blog/tuning-mongodb-for-bulk-loads/">percona blog [7]</a>.</li>
+  <li>You could increase the memory of machine/memory share utilized by wired tiger (not too scalable though).</li>
+  <li>You could try and increase the <code class="language-plaintext highlighter-rouge">evict_updates_trigger</code> the configuration itself to a higher value (although MongoDB does not recommend tuning these configurations, but desperate time calls for desperate measures).</li>
+</ul>
+
+<p>PS: Feel free to drop a better solution to this if you have one :D</p>
+
+<h1 id="conclusion-">Conclusion 😮‍💨</h1>
+
+<p>We discussed in detail an interesting cache eviction issue and discussed its possible remedies while walking through the architecture and design of wired tiger’s Cache and LRU Cache eviction policies.</p>
+
+<h1 id="references-">References 🔗</h1>
+
+<ol>
+  <li>WiredTiger — <a href="https://source.wiredtiger.com/11.1.0/index.html">https://source.wiredtiger.com/11.1.0/index.html</a></li>
+  <li>WiredTiger Cache Evictions — <a href="https://source.wiredtiger.com/11.0.0/arch-eviction.html#eviction_overall">https://source.wiredtiger.com/11.0.0/arch-eviction.html#eviction_overall</a></li>
+  <li>WT memory usage — <a href="https://www.mongodb.com/docs/manual/core/wiredtiger/#memory-use">https://www.mongodb.com/docs/manual/core/wiredtiger/#memory-use</a></li>
+  <li>Why track update bytes separately? — <a href="https://jira.mongodb.org/browse/WT-6175">https://jira.mongodb.org/browse/WT-6175</a></li>
+  <li><code class="language-plaintext highlighter-rouge">__wt_cache</code> struct in wired tiger — <a href="https://github.com/wiredtiger/wiredtiger/blob/develop/src/include/cache.h#L62-L240">https://github.com/wiredtiger/wiredtiger/blob/develop/src/include/cache.h#L62-L240</a></li>
+  <li><code class="language-plaintext highlighter-rouge">__wt_page_out</code> method to evict the page from B-Tree — <a href="https://github.com/wiredtiger/wiredtiger/blob/fe22c23199fd0f6462a148c51b0a9694857a19bc/src/btree/bt_discard.c#L57-L141">https://github.com/wiredtiger/wiredtiger/blob/fe22c23199fd0f6462a148c51b0a9694857a19bc/src/btree/bt_discard.c#L57-L141</a></li>
+  <li>Percona blog to tune MongoDB for bulk loads — <a href="https://www.percona.com/blog/tuning-mongodb-for-bulk-loads/">https://www.percona.com/blog/tuning-mongodb-for-bulk-loads/</a></li>
+</ol>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="databases" /><category term="mongodb" /><summary type="html"><![CDATA[MongoDB is an extremely popular no SQL database solution with an interesting cache architecture. Tons of projects use MongoDB in production including ours at GoTo Financial. It has been working perfectly for quite some time until came to a point when it suddenly wasn’t and this small post is all about our misadventures with MongoDB.]]></summary></entry><entry><title type="html">Pushing Redis Sentinels to their limit</title><link href="/2023/06/23/pushing-redis-sentinels-to-their-limit.html" rel="alternate" type="text/html" title="Pushing Redis Sentinels to their limit" /><published>2023-06-23T00:00:00+00:00</published><updated>2023-06-23T00:00:00+00:00</updated><id>/2023/06/23/pushing-redis-sentinels-to-their-limit</id><content type="html" xml:base="/2023/06/23/pushing-redis-sentinels-to-their-limit.html"><![CDATA[<p>Script and tips on how to set up multiple master-replica Redis instances and multiple Redis sentinels to monitor them.</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p>Before I even introduce this script, allow me to explain why did I even need to write this? Currently, there is <strong>no maximum limit documented on the number of masters a single Redis sentinel can monitor</strong> at the same time (at least I couldn’t find any after hours of scouring through the <a href="https://redis.io/docs/management/sentinel/">Redis Sentinel documentation</a>[1] and their client spec 😢) and I wanted to test the scalability of these</p>
+
+<p>I turned to our good AI friend, chat GPT for its help, who, very weirdly stated that <strong>“Redis 6.x can monitor up to 10 masters.”</strong></p>
+
+<div class="link-preview">
+    <a href="https://chat.openai.com/share/34f8bf31-3bd4-46a9-b596-5851463cb7d1" target="_blank">
+        <h4>Redis Sentinel: Max Masters</h4>
+        <p>A conversational AI system that listens, learns, and challenges</p>
+        <span class="domain">chat.openai.com</span>
+    </a>
+</div>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*jwFwtB0O7tytDWY8VPqxeQ.png" alt="Chat GPT stating the limit of a maximum of 10 masters" /></p>
+
+<p>This was bad news for me because I didn’t want Redis Sentinels to be a point of failure in the scenario I want them to monitor the production level, which is <strong>easily &gt;25</strong> Redis master-replica instances. So I decided to go ahead and do what every good engineer should do, create a small POC and test this claim 😁</p>
+
+<h1 id="small-experiment-">Small Experiment 🧪</h1>
+
+<p>I created this small script to generate a couple of things :</p>
+
+<ol>
+  <li>Docker Compose file which contains the following instances:
+    <ul>
+      <li>configurable number of Redis master-replica instances.</li>
+      <li>configurable number of Redis sentinels.</li>
+    </ul>
+  </li>
+  <li>Redis Sentinel configuration files.
+    <ul>
+      <li>Creates as many configurations as the number of Redis sentinels.
+here?</li>
+    </ul>
+  </li>
+</ol>
+
+<noscript><pre>400: Invalid request</pre></noscript>
+<script src="https://gist.github.com/df499fb528127beb889eb1236718f585.js"> </script>
+
+<h2 id="steps-to-use-this-script">Steps to use this script</h2>
+
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// I am assuming benchmark is your present working directory.
+<span class="nv">$ </span><span class="nb">cd </span>benchmark 
+<span class="nv">$ </span><span class="nb">mkdir </span>config/sentinel
+<span class="nv">$ </span><span class="nb">chmod</span> <span class="nt">-R</span> 0777 config/
+<span class="nv">$ </span>python3 docker-compose-gen.py <span class="o">{</span>number of masters<span class="o">}</span> <span class="o">{</span>number of sentinels<span class="o">}</span>
+<span class="nv">$ </span>docker compose up <span class="nt">--remove-orphans</span>
+</code></pre></div></div>
+
+<h2 id="why-give-full-access-to-the-config-folder-"><strong>Why give full access to the “config/” folder?</strong> 🤔</h2>
+
+<p>We did so because corresponding Redis sentinel instances will be creating temporary configs and updating the existing configurations. To ensure that works smoothly, you need to give full permission to this directory before mounting it to the sentinel’s container’s volumes.</p>
+
+<h1 id="results">Results</h1>
+
+<p>I won’t be going deep into what the Redis sentinel’s configurations mean in this blog post, the <a href="https://redis.io/docs/management/sentinel/#a-quick-tutorial">tutorial</a>[2] in their documentation explains the values well.</p>
+
+<h2 id="docker-resource-provisioning">Docker resource provisioning</h2>
+
+<p>I wanted to simulate a scenario where each sentinel server has 2 vCPUs and 8 GiB memory to work with, but since I have only an M1 and want to scale the setup to <strong>~50 master-replica instances + 3 sentinels</strong>, I decided to provision my <a href="https://github.com/abiosoft/colima"><em>colima</em></a>[3] with <strong>6 CPU cores and 10 GiB</strong> memory.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*oVpii3DYF8CVhmsJcRqGfA.png" alt="Colima configuration" /></p>
+
+<h2 id="verifying-if-all-sentinels-are-monitoring-a-master-️️">Verifying if all sentinels are monitoring a master 🕵️‍♂️</h2>
+
+<p>After creating a configuration with 50 master replicas and 3 Redis sentinels, we can verify if a sentinel process (let’s call it sentinel-1) has registered that other sentinels too are monitoring this master (in this example, it’ll be <code class="language-plaintext highlighter-rouge">mymaster-1</code> ).</p>
+
+<h3 id="1-verifying-via-logs">1. Verifying via logs</h3>
+
+<p>If you notice the logs of your other 2 sentinel processes, you’ll notice a <code class="language-plaintext highlighter-rouge">+sentinel</code> event against <code class="language-plaintext highlighter-rouge">mymaster-1</code> .</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*vQqxrCOEt0_9sOWqZGZ8Uw.png" alt="Logs of sentinel process" /></p>
+
+<p>These <code class="language-plaintext highlighter-rouge">+sentinel</code> events show that the particular redis-sentinel has registered a peer sentinel process <code class="language-plaintext highlighter-rouge">4ef980b...</code> running on <code class="language-plaintext highlighter-rouge">172.18.0.101:5000</code> is also monitoring <code class="language-plaintext highlighter-rouge">mymaster-1</code> which is running on <code class="language-plaintext highlighter-rouge">172.18.0.26:6379</code> .</p>
+
+<h3 id="2-verifying-by-checking-the-configuration-file">2. Verifying by checking the configuration file</h3>
+
+<p>If you head into <code class="language-plaintext highlighter-rouge">config/sentinel/sentinel-1.conf</code> , and search for <code class="language-plaintext highlighter-rouge">mymaster-1</code> , you’ll notice the following</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*XGz49ul7y6try7rXoXOtjw.png" alt="sentinel-1.conf" /></p>
+
+<p>This sentinel process has registered the other 2 sentinel processes and set that with <code class="language-plaintext highlighter-rouge">known-sentinel</code> .</p>
+
+<h3 id="3-verifying-via-redis-cli">3. Verifying via redis-cli</h3>
+
+<p>You could verify the same by running the command <code class="language-plaintext highlighter-rouge">sentinel sentinels mymaster-1</code> in Redis cli of a sentinel server.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gBT2jtgNgnmGNgQ86D1Pmw.png" alt="sentinel sentinels mymaster-1" /></p>
+
+<h1 id="testing-failovers-">Testing failovers 🔥</h1>
+
+<p>To test failovers and see the automatic replica to master upgrade in action, you could do one of the following to any master instance.</p>
+
+<ol>
+  <li>Run the following command to put the master instance to sleep for some time:
+<code class="language-plaintext highlighter-rouge">$ redis-cli -p 6379 DEBUG sleep 30</code></li>
+  <li>Or, you could simply kill a docker container:
+<code class="language-plaintext highlighter-rouge">$ docker kill redis-master-10</code></li>
+</ol>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gGg220AKSIB7ZynY6F8heQ.png" alt="Failover logs of redis-sentinel" /></p>
+
+<p>I killed a docker container and let’s dive deeper into the events of what exactly happened from the sentinel POV.</p>
+
+<ol>
+  <li>Each sentinel process emitted a <strong><em>+sdown master mymaster-10 172.18.0.9 6379</em></strong> event, signifying that they have detected that <code class="language-plaintext highlighter-rouge">mymaster-10</code> is no longer reachable.</li>
+  <li>The <strong><em>+sdown</em></strong> event got escalated to <strong><em>+odown</em> with quorom of 2/2<em>,</em></strong> means at least 2 sentinels agree that this master is no longer reachable, so a failover can begin now.</li>
+  <li>An election occurs for determining which sentinel process will perform this failover, in this election, <strong><em>redis-sentinel-3 (24911173b3ca868e5eb71cbfbda725d310629e26)</em></strong> won (you can verify which sentinel is which by checking <code class="language-plaintext highlighter-rouge">myid</code> from their config or check for <code class="language-plaintext highlighter-rouge">+elected-leader</code> being emitted from their logs).</li>
+</ol>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*REYlxtyAguwnJ4izYMluqA.png" alt="sentinel elections" /></p>
+
+<ol>
+  <li>This sentinel process performs a failover right away and <code class="language-plaintext highlighter-rouge">redis-slave-10</code> assumes the master role.</li>
+</ol>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*9IAWIhbtjQMKhjSKDM2b2g.png" alt="redis-sentinel-3 performing a failover" /></p>
+
+<p>I tried failing over multiple masters at the same time and that went smooth as butter 😮, looks like 10 is definitely not the upper limit of masters which a sentinel group can monitor.</p>
+
+<h1 id="conclusion-">Conclusion ✅</h1>
+
+<p>We come to the conclusion that a small group of 3 Redis sentinels can easily monitor and perform failover on ~50 master-replica instances with ease if the entire setup is provisioned with 6 CPU cores and 10 GiB memory and don’t trust AI so easily without performing small experiments yourself 😛</p>
+
+<p>Until next time! 👋</p>
+
+<h1 id="resources-">Resources 🔗</h1>
+
+<ul>
+  <li>[1] <a href="https://redis.io/docs/management/sentinel/">Redis sentinel documentation</a></li>
+  <li>[2] <a href="https://redis.io/docs/management/sentinel/#a-quick-tutorial">Sentinel official tutorial</a></li>
+  <li>[3] <a href="https://github.com/abiosoft/colima">Github: abisoft/colima</a></li>
+</ul>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="redis" /><category term="benchmarking" /><summary type="html"><![CDATA[Script and tips on how to set up multiple master-replica Redis instances and multiple Redis sentinels to monitor them.]]></summary></entry><entry><title type="html">The Internals of Go Channels</title><link href="/2023/02/18/the-internals-of-go-channels.html" rel="alternate" type="text/html" title="The Internals of Go Channels" /><published>2023-02-18T00:00:00+00:00</published><updated>2023-02-18T00:00:00+00:00</updated><id>/2023/02/18/the-internals-of-go-channels</id><content type="html" xml:base="/2023/02/18/the-internals-of-go-channels.html"><![CDATA[<p>Recently I have been reading about the design of the Go language and this post is an accumulation of notes specific to the buffered channels and how they work.</p>
+
+<p>If you want to understand what a channel in go is, please refer to <a href="https://gobyexample.com/channels">this article [1]</a>. After this point, I assume that we have a basic understanding of a go channel, that being said, let’s now dive in!</p>
+
+<h1 id="making-a-go-channel">Making a go channel</h1>
+
+<p>Before we dive into how go channels are made, let’s see <strong>what they look like under the hood.</strong></p>
+
+<h2 id="sneak-peek-at-the-hchan-struct">Sneak peek at the “hchan” struct</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*l6ovT9IBB8K8f6y5rE9-RA.png" alt="captionless image" /></p>
+
+<p>The above snippet is from <code class="language-plaintext highlighter-rouge">go/src/runtime/chan.go</code> , the file which contains the implementation of go channels. The <code class="language-plaintext highlighter-rouge">hchan</code> struct is the one which stores all the information about a particular channel.</p>
+
+<p><code class="language-plaintext highlighter-rouge">hchan</code> has an element <code class="language-plaintext highlighter-rouge">buf</code> that stores data as a circular queue. <code class="language-plaintext highlighter-rouge">sendx</code> is the index in which goroutines will push the next element while <code class="language-plaintext highlighter-rouge">recvx</code> is the index from where the next element will be taken from.</p>
+
+<p>An important thing to note here is that the <code class="language-plaintext highlighter-rouge">lock</code> not only protects the fields in <code class="language-plaintext highlighter-rouge">hchan</code>but also protects the fields of the goroutines (<code class="language-plaintext highlighter-rouge">sudog</code>) blocked in the channels.</p>
+
+<p>Now that we understand the basic structure of a channel, let’s take a look at <strong>how they are initialized.</strong></p>
+
+<h2 id="the-makechan-function">The makechan function</h2>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// go/src/runtime/chan.go</span>
+<span class="k">func</span> <span class="n">makechan</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">chantype</span><span class="p">,</span> <span class="n">size</span> <span class="kt">int</span><span class="p">)</span> <span class="o">*</span><span class="n">hchan</span> <span class="p">{</span>
+   <span class="n">elem</span> <span class="o">:=</span> <span class="n">t</span><span class="o">.</span><span class="n">elem</span>
+   <span class="c">// compiler checks this but be safe.</span>
+   <span class="k">if</span> <span class="n">elem</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;=</span> <span class="m">1</span><span class="o">&lt;&lt;</span><span class="m">16</span> <span class="p">{</span>
+      <span class="n">throw</span><span class="p">(</span><span class="s">"makechan: invalid channel element type"</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="k">if</span> <span class="n">hchanSize</span><span class="o">%</span><span class="n">maxAlign</span> <span class="o">!=</span> <span class="m">0</span> <span class="o">||</span> <span class="n">elem</span><span class="o">.</span><span class="n">align</span> <span class="o">&gt;</span> <span class="n">maxAlign</span> <span class="p">{</span>
+      <span class="n">throw</span><span class="p">(</span><span class="s">"makechan: bad alignment"</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="n">mem</span><span class="p">,</span> <span class="n">overflow</span> <span class="o">:=</span> <span class="n">math</span><span class="o">.</span><span class="n">MulUintptr</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="kt">uintptr</span><span class="p">(</span><span class="n">size</span><span class="p">))</span>
+   <span class="k">if</span> <span class="n">overflow</span> <span class="o">||</span> <span class="n">mem</span> <span class="o">&gt;</span> <span class="n">maxAlloc</span><span class="o">-</span><span class="n">hchanSize</span> <span class="o">||</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="m">0</span> <span class="p">{</span>
+      <span class="nb">panic</span><span class="p">(</span><span class="n">plainError</span><span class="p">(</span><span class="s">"makechan: size out of range"</span><span class="p">))</span>
+   <span class="p">}</span>
+   <span class="c">// Hchan does not contain pointers interesting for GC when elements stored in buf do not contain pointers.</span>
+   <span class="c">// buf points into the same allocation, elemtype is persistent.</span>
+   <span class="c">// SudoG's are referenced from their owning thread so they can't be collected.</span>
+   <span class="c">// TODO(dvyukov,rlh): Rethink when collector can move allocated objects.</span>
+   <span class="k">var</span> <span class="n">c</span> <span class="o">*</span><span class="n">hchan</span>
+   <span class="k">switch</span> <span class="p">{</span>
+   <span class="k">case</span> <span class="n">mem</span> <span class="o">==</span> <span class="m">0</span><span class="o">:</span>
+      <span class="c">// Queue or element size is zero.</span>
+      <span class="n">c</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">hchan</span><span class="p">)(</span><span class="n">mallocgc</span><span class="p">(</span><span class="n">hchanSize</span><span class="p">,</span> <span class="no">nil</span><span class="p">,</span> <span class="no">true</span><span class="p">))</span>
+      <span class="c">// Race detector uses this location for synchronization.</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">buf</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">raceaddr</span><span class="p">()</span>
+   <span class="k">case</span> <span class="n">elem</span><span class="o">.</span><span class="n">ptrdata</span> <span class="o">==</span> <span class="m">0</span><span class="o">:</span>
+      <span class="c">// Elements do not contain pointers.</span>
+      <span class="c">// Allocate hchan and buf in one call.</span>
+      <span class="n">c</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">hchan</span><span class="p">)(</span><span class="n">mallocgc</span><span class="p">(</span><span class="n">hchanSize</span><span class="o">+</span><span class="n">mem</span><span class="p">,</span> <span class="no">nil</span><span class="p">,</span> <span class="no">true</span><span class="p">))</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">buf</span> <span class="o">=</span> <span class="n">add</span><span class="p">(</span><span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">(</span><span class="n">c</span><span class="p">),</span> <span class="n">hchanSize</span><span class="p">)</span>
+   <span class="k">default</span><span class="o">:</span>
+      <span class="c">// Elements contain pointers.</span>
+      <span class="n">c</span> <span class="o">=</span> <span class="nb">new</span><span class="p">(</span><span class="n">hchan</span><span class="p">)</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">buf</span> <span class="o">=</span> <span class="n">mallocgc</span><span class="p">(</span><span class="n">mem</span><span class="p">,</span> <span class="n">elem</span><span class="p">,</span> <span class="no">true</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="n">c</span><span class="o">.</span><span class="n">elemsize</span> <span class="o">=</span> <span class="kt">uint16</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+   <span class="n">c</span><span class="o">.</span><span class="n">elemtype</span> <span class="o">=</span> <span class="n">elem</span>
+   <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="o">=</span> <span class="kt">uint</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+   <span class="n">lockInit</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">,</span> <span class="n">lockRankHchan</span><span class="p">)</span>
+   <span class="k">if</span> <span class="n">debugChan</span> <span class="p">{</span>
+      <span class="nb">print</span><span class="p">(</span><span class="s">"makechan: chan="</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="s">"; elemsize="</span><span class="p">,</span> <span class="n">elem</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="s">"; dataqsiz="</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="s">"</span><span class="se">\n</span><span class="s">"</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="k">return</span> <span class="n">c</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here, <code class="language-plaintext highlighter-rouge">makechan</code>function initializes a <code class="language-plaintext highlighter-rouge">hchan</code> struct calculates the size of the buffer needed according to the element being stored, and eventually returns a pointer to the struct (<code class="language-plaintext highlighter-rouge">*hchan</code>).</p>
+
+<blockquote>
+  <p>I’ll be honest here, I am not very sure what the bad alignment validation is all about, diving a little deeper shows that it’s about memory validation and type alignment in go, couple of topics which I am not very sure about. Probably next blog post will be about that? <em>😄</em></p>
+</blockquote>
+
+<h1 id="sending-an-element-to-the-channel">Sending an element to the channel</h1>
+
+<p>Now, let’s talk about how a goroutine (<em>g1</em>) pushes an element in the channel.</p>
+
+<p>Channel sends are handled by <code class="language-plaintext highlighter-rouge">chansend</code></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="n">c</span> <span class="o">==</span> <span class="no">nil</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="o">!</span><span class="n">block</span> <span class="p">{</span>
+     <span class="k">return</span> <span class="no">false</span>
+    <span class="p">}</span>
+    <span class="n">gopark</span><span class="p">(</span><span class="no">nil</span><span class="p">,</span> <span class="no">nil</span><span class="p">,</span> <span class="n">waitReasonChanSendNilChan</span><span class="p">,</span> <span class="n">traceEvGoStop</span><span class="p">,</span> <span class="m">2</span><span class="p">)</span>
+    <span class="n">throw</span><span class="p">(</span><span class="s">"unreachable"</span><span class="p">)</span>
+   <span class="p">}</span>
+  
+   <span class="k">if</span> <span class="n">debugChan</span> <span class="p">{</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s">"chansend: chan="</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="s">"</span><span class="se">\n</span><span class="s">"</span><span class="p">)</span>
+   <span class="p">}</span>
+  
+   <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+    <span class="n">racereadpc</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">raceaddr</span><span class="p">(),</span> <span class="n">callerpc</span><span class="p">,</span> <span class="n">abi</span><span class="o">.</span><span class="n">FuncPCABIInternal</span><span class="p">(</span><span class="n">chansend</span><span class="p">))</span>
+   <span class="p">}</span>
+  
+   <span class="c">// Fast path: check for failed non-blocking operation without acquiring the lock.</span>
+   <span class="c">//</span>
+   <span class="c">// After observing that the channel is not closed, we observe that the channel is</span>
+   <span class="c">// not ready for sending. Each of these observations is a single word-sized read</span>
+   <span class="c">// (first c.closed and second full()).</span>
+   <span class="c">// Because a closed channel cannot transition from 'ready for sending' to</span>
+   <span class="c">// 'not ready for sending', even if the channel is closed between the two observations,</span>
+   <span class="c">// they imply a moment between the two when the channel was both not yet closed</span>
+   <span class="c">// and not ready for sending. We behave as if we observed the channel at that moment,</span>
+   <span class="c">// and report that the send cannot proceed.</span>
+   <span class="c">//</span>
+   <span class="c">// It is okay if the reads are reordered here: if we observe that the channel is not</span>
+   <span class="c">// ready for sending and then observe that it is not closed, that implies that the</span>
+   <span class="c">// channel wasn't closed during the first observation. However, nothing here</span>
+   <span class="c">// guarantees forward progress. We rely on the side effects of lock release in</span>
+   <span class="c">// chanrecv() and closechan() to update this thread's view of c.closed and full().</span>
+   <span class="k">if</span> <span class="o">!</span><span class="n">block</span> <span class="o">&amp;&amp;</span> <span class="n">c</span><span class="o">.</span><span class="n">closed</span> <span class="o">==</span> <span class="m">0</span> <span class="o">&amp;&amp;</span> <span class="n">full</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="no">false</span>
+   <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>If the <code class="language-plaintext highlighter-rouge">send</code> on the channel is not blocking and the channel is full, it just returns a <code class="language-plaintext highlighter-rouge">false</code> or, if the channel is closed, it’ll throw an error saying <code class="language-plaintext highlighter-rouge">send on closed channel</code></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  <span class="o">...</span>
+  <span class="k">if</span> <span class="n">sg</span> <span class="o">:=</span> <span class="n">c</span><span class="o">.</span><span class="n">recvq</span><span class="o">.</span><span class="n">dequeue</span><span class="p">();</span> <span class="n">sg</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+     <span class="c">// Found a waiting receiver. We pass the value we want to send</span>
+     <span class="c">// directly to the receiver, bypassing the channel buffer (if any).</span>
+     <span class="n">send</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">sg</span><span class="p">,</span> <span class="n">ep</span><span class="p">,</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span> <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span> <span class="p">},</span> <span class="m">3</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">true</span>
+  <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Otherwise, it will first check whether the channel has any waiting receiver goroutine (<em>g2</em>), if yes, <em>g1</em> will directly send data to <em>g2</em>’s stack! (It also implies that the channel was already empty, we’ll discuss this direct copy more in detail)</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  <span class="o">...</span>
+  <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">qcount</span> <span class="o">&lt;</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+     <span class="c">// Space is available in the channel buffer. Enqueue the element to send.</span>
+     <span class="n">qp</span> <span class="o">:=</span> <span class="n">chanbuf</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">sendx</span><span class="p">)</span>
+     <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+        <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">sendx</span><span class="p">,</span> <span class="no">nil</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">qp</span><span class="p">,</span> <span class="n">ep</span><span class="p">)</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">sendx</span><span class="o">++</span>
+     <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">sendx</span> <span class="o">==</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">sendx</span> <span class="o">=</span> <span class="m">0</span>
+     <span class="p">}</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">qcount</span><span class="o">++</span>
+     <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">true</span>
+  <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Let’s say there was no waiting goroutine(<em>g2</em>), then we check whether there is space available in the channel buffer, if it is, we copy the element in buffer memory and increment the <code class="language-plaintext highlighter-rouge">sendx</code> and <code class="language-plaintext highlighter-rouge">qcount</code> while unlocking the channel!</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*wEFxS_jUg5FeXDpllcyndQ.png" alt="Populating c.buf with memory copy" /></p>
+
+<p>But… what will happen if there was no space left in the channel’s buffer? Here, two situations can happen.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*Q4YVE5bPF9vb5-j0I-OPoA.png" alt="How blocking and nonblocking sends are compiled." /></p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chansend</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+  
+  <span class="o">...</span>
+  
+  <span class="k">if</span> <span class="o">!</span><span class="n">block</span> <span class="p">{</span>
+     <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">false</span>
+  <span class="p">}</span>
+  
+  <span class="c">// Block on the channel. Some receiver will complete our operation for us.</span>
+  <span class="n">gp</span> <span class="o">:=</span> <span class="n">getg</span><span class="p">()</span>
+  <span class="n">mysg</span> <span class="o">:=</span> <span class="n">acquireSudog</span><span class="p">()</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">=</span> <span class="m">0</span>
+  <span class="k">if</span> <span class="n">t0</span> <span class="o">!=</span> <span class="m">0</span> <span class="p">{</span>
+     <span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">=</span> <span class="o">-</span><span class="m">1</span>
+  <span class="p">}</span>
+  <span class="c">// No stack splits between assigning elem and enqueuing mysg</span>
+  <span class="c">// on gp.waiting where copystack can find it.</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">elem</span> <span class="o">=</span> <span class="n">ep</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">waitlink</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">g</span> <span class="o">=</span> <span class="n">gp</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">isSelect</span> <span class="o">=</span> <span class="no">false</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="n">c</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">waiting</span> <span class="o">=</span> <span class="n">mysg</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">param</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">c</span><span class="o">.</span><span class="n">sendq</span><span class="o">.</span><span class="n">enqueue</span><span class="p">(</span><span class="n">mysg</span><span class="p">)</span>
+  <span class="c">// Signal to anyone trying to shrink our stack that we're about</span>
+  <span class="c">// to park on a channel. The window between when this G's status</span>
+  <span class="c">// changes and when we set gp.activeStackChans is not safe for</span>
+  <span class="c">// stack shrinking.</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">parkingOnChan</span><span class="o">.</span><span class="n">Store</span><span class="p">(</span><span class="no">true</span><span class="p">)</span>
+  <span class="n">gopark</span><span class="p">(</span><span class="n">chanparkcommit</span><span class="p">,</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">),</span> <span class="n">waitReasonChanSend</span><span class="p">,</span> <span class="n">traceEvGoBlockSend</span><span class="p">,</span> <span class="m">2</span><span class="p">)</span>
+  <span class="c">// Ensure the value being sent is kept alive until the</span>
+  <span class="c">// receiver copies it out. The sudog has a pointer to the</span>
+  <span class="c">// stack object, but sudogs aren't considered as roots of the</span>
+  <span class="c">// stack tracer.</span>
+  <span class="n">KeepAlive</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span>
+  
+  <span class="c">// someone woke us up.</span>
+  <span class="k">if</span> <span class="n">mysg</span> <span class="o">!=</span> <span class="n">gp</span><span class="o">.</span><span class="n">waiting</span> <span class="p">{</span>
+     <span class="n">throw</span><span class="p">(</span><span class="s">"G waiting list is corrupted"</span><span class="p">)</span>
+  <span class="p">}</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">waiting</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">activeStackChans</span> <span class="o">=</span> <span class="no">false</span>
+  <span class="n">closed</span> <span class="o">:=</span> <span class="o">!</span><span class="n">mysg</span><span class="o">.</span><span class="n">success</span>
+  <span class="n">gp</span><span class="o">.</span><span class="n">param</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="k">if</span> <span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">&gt;</span> <span class="m">0</span> <span class="p">{</span>
+     <span class="n">blockevent</span><span class="p">(</span><span class="n">mysg</span><span class="o">.</span><span class="n">releasetime</span><span class="o">-</span><span class="n">t0</span><span class="p">,</span> <span class="m">2</span><span class="p">)</span>
+  <span class="p">}</span>
+  <span class="n">mysg</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="no">nil</span>
+  <span class="n">releaseSudog</span><span class="p">(</span><span class="n">mysg</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">closed</span> <span class="p">{</span>
+     <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">closed</span> <span class="o">==</span> <span class="m">0</span> <span class="p">{</span>
+        <span class="n">throw</span><span class="p">(</span><span class="s">"chansend: spurious wakeup"</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="nb">panic</span><span class="p">(</span><span class="n">plainError</span><span class="p">(</span><span class="s">"send on closed channel"</span><span class="p">))</span>
+  <span class="p">}</span>
+  <span class="k">return</span> <span class="no">true</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>If it were a non-blocking send call, we’ll move out of the send function, if not, then we enqueue this sender (<em>g1</em>) to the channel’s <code class="language-plaintext highlighter-rouge">sendq</code> and ask the go runtime scheduler to pause <em>g1.</em></p>
+
+<blockquote>
+  <p>The <strong>sudog</strong> here is a struct which holds information for a waiting goroutine (in our case, <strong>g1</strong>). Go runtime is going to park this <strong>sending</strong> <strong>goroutine (g1),</strong> and according to comments, we are ensuring that</p>
+
+  <ol>
+    <li>g1’s stack should not shrink — (understand more about stack growth and shrinking from this <a href="https://www.youtube.com/watch?v=-K11rY57K7k">video</a>[4])</li>
+    <li>Ensure that the value which g1 was going to send is kept alive until receiver (g2) copies out of it.</li>
+  </ol>
+</blockquote>
+
+<p>When a receiver goroutine (<em>g2</em>) comes along and wakes us up, we finally release the <code class="language-plaintext highlighter-rouge">sudog</code> and check if the channel was closed or not once again. If it was, throw an error, else return true!</p>
+
+<h2 id="now-what-was-that-direct-send-thing-again">Now, what was that direct send thing again?</h2>
+
+<p>In an empty-buffered / unbuffered channel, when <em>g2</em> is already present in <code class="language-plaintext highlighter-rouge">recvq</code> , go allows the <em>g1</em> to directly copy the element in receiving <em>g2’s</em> stack.</p>
+
+<p>The Go GC assumes that stack writes only happen when <em>g1</em> is running and is only done by it.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*l-QhXKEyTfguIZ2vOP893g.png" alt="Screenshot from Kavya’s video regarding the scenario when g2 comes first." /></p>
+
+<p>A thing to note is that a write barrier is established before the element is copied to the stack of receiving goroutine. This saves one memory copy operation! The actual implementation of <code class="language-plaintext highlighter-rouge">memmove</code> can be found here — <a href="https://en.cppreference.com/w/c/string/byte/memmove">CPP Reference</a>[5]</p>
+
+<h1 id="receiving-an-element-from-the-channel">Receiving an element from the channel</h1>
+
+<p>As the title suggests, here we need to understand how a goroutine receives an element from the channel. following earlier conventions, the receiver goroutine will be <em>g2,</em> and sending goroutine will be <em>g1.</em></p>
+
+<p>Receives are handled by <code class="language-plaintext highlighter-rouge">chanrecv</code> and the docstring has beautifully explained its role, so I am just going to state that here —</p>
+
+<blockquote>
+  <p><strong>chanrecv</strong> receives on channel <strong>c</strong> and writes the received data to <strong>ep</strong>.
+<strong>ep</strong> may be nil, in which case received data is ignored.
+If <strong>block</strong> == false and no elements are available, returns (false, false).
+Otherwise, if <strong>c</strong> is closed, zeros <strong><em>ep** and returns (true, false).
+Otherwise, fills in **</em>ep</strong> with an element and returns (true, true).
+A non-nil <strong>ep</strong> must point to the heap or the caller’s stack.</p>
+</blockquote>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">func</span> <span class="n">chanrecv</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">block</span> <span class="kt">bool</span><span class="p">)</span> <span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="n">received</span> <span class="kt">bool</span><span class="p">)</span> <span class="p">{</span>
+  <span class="o">...</span>
+  <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">qcount</span> <span class="o">&gt;</span> <span class="m">0</span> <span class="p">{</span>
+     <span class="c">// Receive directly from queue</span>
+     <span class="n">qp</span> <span class="o">:=</span> <span class="n">chanbuf</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">)</span>
+     <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+        <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">,</span> <span class="no">nil</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="k">if</span> <span class="n">ep</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+        <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">ep</span><span class="p">,</span> <span class="n">qp</span><span class="p">)</span>
+     <span class="p">}</span>
+     <span class="n">typedmemclr</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">qp</span><span class="p">)</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="o">++</span>
+     <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">==</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">=</span> <span class="m">0</span>
+     <span class="p">}</span>
+     <span class="n">c</span><span class="o">.</span><span class="n">qcount</span><span class="o">--</span>
+     <span class="n">unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">.</span><span class="n">lock</span><span class="p">)</span>
+     <span class="k">return</span> <span class="no">true</span><span class="p">,</span> <span class="no">true</span>
+  <span class="p">}</span>
+  <span class="o">...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Pretty standard circular queue operations again, after certain validations and checking if there is no <em>g1</em> already in <code class="language-plaintext highlighter-rouge">sendq</code> , it checks whether there is any element in the channel or not. If there is an element, the channel copies it to <code class="language-plaintext highlighter-rouge">ep</code> and <code class="language-plaintext highlighter-rouge">recvx</code> is incremented while <code class="language-plaintext highlighter-rouge">qcount</code> is decrement and the channel is unlocked.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*T-y7fMf5rTGsgofn33DPNg.png" alt="Receiving data from a channel" /></p>
+
+<p>If there was a <em>g1</em> already present in <code class="language-plaintext highlighter-rouge">sendq</code>, <em>g2</em> will initiate a direct receive to <code class="language-plaintext highlighter-rouge">ep</code> if the buffer is empty, just like a direct send was done, otherwise, <em>g2</em> will take the element from the head of the buffer and copy the element from <em>g1</em>’s stack to the tail of the channel buffer and unpark <em>g1.(i.e.,</em> set <em>g1</em> back to runnable)</p>
+
+<div class="language-go highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">// The portion responsible to initiate the 2 phase receive</span>
+<span class="k">func</span> <span class="n">recv</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span><span class="n">hchan</span><span class="p">,</span> <span class="n">sg</span> <span class="o">*</span><span class="n">sudog</span><span class="p">,</span> <span class="n">ep</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">,</span> <span class="n">unlockf</span> <span class="k">func</span><span class="p">(),</span> <span class="n">skip</span> <span class="kt">int</span><span class="p">)</span> <span class="p">{</span>
+   <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="o">==</span> <span class="m">0</span> <span class="p">{</span>
+      <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+         <span class="n">racesync</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">sg</span><span class="p">)</span>
+      <span class="p">}</span>
+      <span class="k">if</span> <span class="n">ep</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+         <span class="c">// copy data from sender</span>
+         <span class="n">recvDirect</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">sg</span><span class="p">,</span> <span class="n">ep</span><span class="p">)</span>
+      <span class="p">}</span>
+   <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="c">// Queue is full. Take the item at the</span>
+      <span class="c">// head of the queue. Make the sender enqueue</span>
+      <span class="c">// its item at the tail of the queue. Since the</span>
+      <span class="c">// queue is full, those are both the same slot.</span>
+      <span class="n">qp</span> <span class="o">:=</span> <span class="n">chanbuf</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">raceenabled</span> <span class="p">{</span>
+         <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">,</span> <span class="no">nil</span><span class="p">)</span>
+         <span class="n">racenotify</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="p">,</span> <span class="n">sg</span><span class="p">)</span>
+      <span class="p">}</span>
+      <span class="c">// copy data from queue to receiver</span>
+      <span class="k">if</span> <span class="n">ep</span> <span class="o">!=</span> <span class="no">nil</span> <span class="p">{</span>
+         <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">ep</span><span class="p">,</span> <span class="n">qp</span><span class="p">)</span>
+      <span class="p">}</span>
+      <span class="c">// copy data from sender to queue</span>
+      <span class="n">typedmemmove</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">elemtype</span><span class="p">,</span> <span class="n">qp</span><span class="p">,</span> <span class="n">sg</span><span class="o">.</span><span class="n">elem</span><span class="p">)</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">recvx</span><span class="o">++</span>
+      <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">==</span> <span class="n">c</span><span class="o">.</span><span class="n">dataqsiz</span> <span class="p">{</span>
+         <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="o">=</span> <span class="m">0</span>
+      <span class="p">}</span>
+      <span class="n">c</span><span class="o">.</span><span class="n">sendx</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">recvx</span> <span class="c">// c.sendx = (c.sendx+1) % c.dataqsiz</span>
+   <span class="p">}</span>
+   <span class="n">sg</span><span class="o">.</span><span class="n">elem</span> <span class="o">=</span> <span class="no">nil</span>
+   <span class="n">gp</span> <span class="o">:=</span> <span class="n">sg</span><span class="o">.</span><span class="n">g</span>
+   <span class="n">unlockf</span><span class="p">()</span>
+   <span class="n">gp</span><span class="o">.</span><span class="n">param</span> <span class="o">=</span> <span class="n">unsafe</span><span class="o">.</span><span class="n">Pointer</span><span class="p">(</span><span class="n">sg</span><span class="p">)</span>
+   <span class="n">sg</span><span class="o">.</span><span class="n">success</span> <span class="o">=</span> <span class="no">true</span>
+   <span class="k">if</span> <span class="n">sg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">!=</span> <span class="m">0</span> <span class="p">{</span>
+      <span class="n">sg</span><span class="o">.</span><span class="n">releasetime</span> <span class="o">=</span> <span class="n">cputicks</span><span class="p">()</span>
+   <span class="p">}</span>
+   <span class="n">goready</span><span class="p">(</span><span class="n">gp</span><span class="p">,</span> <span class="n">skip</span><span class="o">+</span><span class="m">1</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><strong>Why?</strong> So that <em>g1</em> does not have to acquire the channel’s lock again and copy the element to buffer itself, hence saving some CPU cycles. Brilliant IMO!</p>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/KBZlN0izeiY?si=OQZEBeoLBUZzptjU&amp;start=880" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen=""></iframe>
+
+<p>Lastly, if there is no element to receive from the channel, the channel will either unlock itself and return true; or park <em>g2</em> and enqueue it <code class="language-plaintext highlighter-rouge">recvq</code> until a sender (<em>g1</em>) comes along and wakes <em>g2</em> up.</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>Hopefully, with the aid of these notes and accompanying illustrations, I managed to demystify how channels internally work in Go.</p>
+
+<p>I have come to love the small tweaks and optimizations which Go-engineers have done in such a simple data structure to save a few CPU cycles and ensure memory safety like the <strong><em>direct sends &amp; receives</em></strong>, <strong><em>memcpy</em></strong> and I hope I illustrated them well enough for you to appreciate them as well :D</p>
+
+<h1 id="resources">Resources</h1>
+
+<ul>
+  <li>[1] Go Channels — <a href="https://gobyexample.com/channels">https://gobyexample.com/channels</a></li>
+  <li>[2] GopherCon 2017: Kavya Joshi — <a href="https://www.youtube.com/watch?v=KBZlN0izeiY">Understanding Channels</a></li>
+  <li>[3] <a href="https://go101.org/article/memory-layout.html">Memory Layout in Go</a></li>
+  <li>[4] <a href="https://www.youtube.com/watch?v=-K11rY57K7k">Go scheduler: Implementing language with lightweight concurrency</a></li>
+  <li>[5] <a href="https://en.cppreference.com/w/c/string/byte/memmove">CPP Reference — memmove_.s</a></li>
+</ul>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="go" /><category term="channels" /><summary type="html"><![CDATA[Recently I have been reading about the design of the Go language and this post is an accumulation of notes specific to the buffered channels and how they work.]]></summary></entry><entry><title type="html">Kademlia Distributed Hash Tables</title><link href="/2022/10/14/kademlia-protocol-in-distributed-hash-tables.html" rel="alternate" type="text/html" title="Kademlia Distributed Hash Tables" /><published>2022-10-14T00:00:00+00:00</published><updated>2022-10-14T00:00:00+00:00</updated><id>/2022/10/14/kademlia-protocol-in-distributed-hash-tables</id><content type="html" xml:base="/2022/10/14/kademlia-protocol-in-distributed-hash-tables.html"><![CDATA[<p>I came across this exciting algorithm while watching this bit torrent series by Arpit [1] and honestly, it’s pretty exciting! I have been trying to make my own Torrent client and hopefully, will be able to publish some bare bones about its own implementation sometime in the future :D</p>
+
+<p>Anyway, back to the topic at hand, <strong>Kademlia</strong>. This protocol is used to serve data in a truly decentralized peer-to-peer network. In this kind of network, from the BitTorrent perspective, the Peers will contain certain pieces of the torrent file themselves, and to connect with other peers, to fetch certain other pieces of the same file, they won’t need to talk to any central entity (in this case, Tracker).</p>
+
+<h1 id="distributed-hash-tables">Distributed Hash Tables</h1>
+
+<p>Why’d we switch to a hash table? Well, Kademlia is originally a DHT protocol that has been extended for many other use cases, and it’d make sense to understand its underlying nitty gritty.</p>
+
+<p>In my understanding, a hash table is a data structure that stores key-value pairs. You can input some keys (Or rather, a hash of those keys) and store their associated value.</p>
+
+<p>Now, instead of keeping all the key-value pairs on a single machine, let’s divide up all the keys and store them in separate machines, sounds good no? More machines = More keys! But it doesn’t come without its own headaches.</p>
+
+<h2 id="headaches-">Headaches 😫</h2>
+
+<ul>
+  <li>How are we going to determine, which key is going to be stored in which node in such a way that one node does not have the majority of the keys, i.e. the keys are more or less equally distributed? [Ps — I will be using node and systems synonymously].</li>
+  <li>How will one node figure out which other node in the network to talk to in case it does not have the key which has been requested by the user?</li>
+  <li>There are a ton of nodes, no? What will happen in the scenario when the node leaves the network? How well are the keys replicated in other nodes to tackle this situation?
+[Of course, there is a fundamental issue here, the scenario where all the nodes leave the network, so I’ll be writing this article with the assumption that the rate of the nodes leaving the network is slow enough for the other nodes to catch up at a reasonable rate and not lose all the keys]</li>
+</ul>
+
+<p>Consistent Hashing[2] was the first thought process about how I’d be storing the keys in multiple nodes and didn’t feel that it was much of a problem to solve.</p>
+
+<p>But here comes the beautiful part -</p>
+
+<h1 id="visualizing-hash-tables-as-a-search-tree">Visualizing hash tables as a search tree</h1>
+
+<p>So, before we move on to the visualization, let’s set certain standards of how we are going to represent the nodes and the keys. Kademlia handled it by setting the node and key IDs to <strong>160-bit integers</strong> (in the event the IDs are &gt; 160 bits, a collision-resistant hash function is used to map the ID to 160 bits, original researchers used <code class="language-plaintext highlighter-rouge">SHA-1</code> hash to achieve this).</p>
+
+<p>For our example, let’s envision a hash function that maps the keys and nodes to <strong>4 bits</strong> instead of 160.</p>
+
+<p>In the following representation, the leaves with boxes around them are the nodes. Let’s assume every other leaf is a key that needs to be assigned to a node. By intuition, you could try assigning the keys to the nodes that have Lowest Common Ancestor [3].</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*eZvhlC5-tWa7tgMAyrv-qQ.png" alt="Keys placement with Lowest Common Ancestor" /></p>
+
+<p><strong>The non boxed leaves are the keys and the keys matching color with a node leaf means the Key is present in that Node.</strong></p>
+
+<p>For nodes 1 and 7, the distribution of keys makes sense, for instance, key “2” is assigned to computer 1 because it shares the LCA tree node [00]. Had leaf 0011 [3] been a node, key “2” would’ve been assigned to it.</p>
+
+<p><strong>But there is a slight issue here</strong>, notice that all the keys from 8 to 13 have been assigned to node 14 and none of them to node 15 even though 1110 and 1111 share the same lowest common ancestor with this subset of keys. This is an issue that Kademlia handles very smartly!</p>
+
+<p>To measure the closeness between two IDs, Kademlia takes the help of the longest common prefix as a heuristic and uses binary XOR to calculate it.
+Now, let’s say the <strong>IDs of Key, Node1, and Node2 after SHA1 are</strong> <code class="language-plaintext highlighter-rouge">**k, n1, n2**</code> <strong>respectively.</strong>
+If <code class="language-plaintext highlighter-rouge">k XOR n1 &lt; k XOR n2</code> then the <strong>Key will be assigned to Node 1 else the Key will be assigned to Node 2.</strong></p>
+
+<p>Let’s consider how the tie-breaking will work now for distributing the keys 1100(12) and 1101(13) among nodes 14 and 15.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:690/format:webp/1*NHZcsAU6Raofj_cRd2Wheg.png" alt="captionless image" /></p>
+
+<p>See? now 13 will be assigned to 15 instead of 14! Making the final key distribution to this —</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*QzjPkLTnVfVs79oXo3m3sg.png" alt="captionless image" /></p>
+
+<p>See the beauty of this heuristic? In subtree <strong>1xxx</strong>, all the keys and values are equally distributed among the two computer nodes 14 and 15 <strong>and hence resolving our first headache!</strong></p>
+
+<h1 id="the-k-buckets">The K buckets</h1>
+
+<p>Moving on, let’s take a look at the next one, how would node 7 find what’s the value at key 13? Kademlia protocol handles this with the concept of “K” buckets.</p>
+
+<p>Every node will have a routing table with IP addresses and IDs of at least “K” other active nodes in a prefix range, but hold up, what exactly does this subtree range mean?</p>
+
+<blockquote>
+  <p>Before we get there let’s try and figure out <strong>what is the least number of connections a node, for instance, let’s say Node 7 (0111) will need to fetch any key it needs ASSUMING it has no keys of its own.</strong></p>
+</blockquote>
+
+<p>A good idea would be to iterate the subgroups of which our node is not part, starting with the Most Significant Bit, <code class="language-plaintext highlighter-rouge">0</code>. This means our node needs to have contact with at least one other node in the subtree <code class="language-plaintext highlighter-rouge">1xxx</code> in case it needs a key format <code class="language-plaintext highlighter-rouge">1xxx</code> .Moving on, the next bit is <code class="language-plaintext highlighter-rouge">1</code> which indicates that our node needs a contact in <code class="language-plaintext highlighter-rouge">00xx</code> the subtree to fetch a key of a similar pattern. If you check the next bit which is <code class="language-plaintext highlighter-rouge">1</code> again, it’ll mean our node needs a contact in the subtree <code class="language-plaintext highlighter-rouge">010x</code> to get a key like <code class="language-plaintext highlighter-rouge">0100</code> . Lastly, our least significant bit, which is <code class="language-plaintext highlighter-rouge">1</code>again signifies that we’ll need the address of <code class="language-plaintext highlighter-rouge">0110</code> in case it contains a key of its own! Props to Arpit for explaining this beautifully in this subsection of his kademlia video [4].</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*Fy3gvbltDVOlpAdx5EZyKA.png" alt="Minimum connections that are required in the case where every ID is a node" /></p>
+
+<p>Ideally, if my hash function maps to <strong>N</strong> bits, a node will need at least <strong>N</strong> connections to talk to (Here, N = 4, in actual implementations, N=160). But unfortunately, we are not living in an ideal world, are we? What will happen if the single connection, let’s say node <strong>1011</strong> leaves? What will happen to our dear <strong>0111</strong> if it wants a key in the pattern of <code class="language-plaintext highlighter-rouge">1xxx</code> ?</p>
+
+<h2 id="this-is-where-k-buckets-help">This is where K buckets help</h2>
+
+<p>For every subtree range, a node should have at-most <strong>K</strong> IP addresses of nodes in this range in its routing table, for the illustration of the same, refer to the diagram below</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*RqRJmf0OW3fL-0kBtxmb5A.png" alt="The routing table for Node 0111" /></p>
+
+<p>Now, if our node wants a key let’s say <code class="language-plaintext highlighter-rouge">1101</code> , it can talk to either <code class="language-plaintext highlighter-rouge">1110</code> or <code class="language-plaintext highlighter-rouge">1111</code> and they will give it either the key or the address of the node which contains the key, <strong>Hence resolving our headache number 2!</strong></p>
+
+<h1 id="replication-of-key">Replication of key</h1>
+
+<p>Now that we are done with how to find a key that a node does not have, how to keep multiple replicas of the key so that the data is fault tolerant? This is heavily dependent on whoever is implementing the nodes and what’s their preference, some ideas could be —</p>
+
+<ol>
+  <li>Storing the key in multiple nodes in certain subtree prefixes.</li>
+  <li>Storing the key in a quorum format, and needing at least N nodes to acknowledge saving the key.</li>
+  <li>Caching the key when fetching for it initially from other nodes and serving the key itself later on.</li>
+</ol>
+
+<p>These are a few and are definitely not limited to this.</p>
+
+<p>In a Kademlia DHT, there are a final few things that piece together the DHT, they are formal RPCs. Quoting this source [5], a node must be able to perform the following 5 RPC calls</p>
+
+<blockquote>
+  <p>A computer can be asked <strong>FIND_COMP(id)</strong> call and will return k of the closest computer ids in its routing table and their IP addresses.</p>
+
+  <p>A computer can receive a <strong>FIND_VALUE(key)</strong> call and will return the value if the (key,value) pair is stored locally on the machine. If the key is not stored locally, the computer will respond as if it received a <strong>FIND_COMP(key)</strong> call.</p>
+
+  <p>A computer can receive a <strong>STORE(key, value)</strong> and will just store the key-value pair in a local map of its choice.</p>
+
+  <p>A computer can receive a <strong>PING</strong> call to verify that the computer is still online.</p>
+
+  <p>To ensure that keys remain in the network, the caller who stored or requested a resource is required to re-issue a <strong>STORE</strong> call within a given time frame, such as every 24 hours. Otherwise, computers will automatically evict old key-value pairs to reduce bloat.</p>
+</blockquote>
+
+<p>That’s about it for this blog, this is the bare bones of how this protocol works, and to think that such an amazing algorithm was just built on top of an XOR heuristic is frankly mind-blowing! Kindly refer to the resources attached below for the references to this material.</p>
+
+<p>Until next time!</p>
+
+<h1 id="resources">Resources</h1>
+
+<ul>
+  <li>[1] <a href="https://www.youtube.com/watch?v=_kCHOpINA5g">Kademlia — a Distributed Hash Table implementation to power the overlay network of BitTorrent</a></li>
+  <li>[2] <a href="https://www.toptal.com/big-data/consistent-hashing#:~:text=according%20to%20Wikipedia">A Guide to Consistent Hashing</a>.-,Consistent%20Hashing%20is%20a%20distributed%20hashing%20scheme%20that%20operates%20independently,without%20affecting%20the%20overall%20system.)</li>
+  <li>[3] <a href="https://www.geeksforgeeks.org/lowest-common-ancestor-binary-tree-set-1/#:~:text=The%20lowest%20common%20ancestor%20is,located%20farthest%20from%20the%20root.">Lowest Common Ancestor (LCA) in a binary tree</a></li>
+  <li>[4] <a href="https://youtu.be/_kCHOpINA5g?t=1197">Routing in Kademlia — Section by Arpit</a></li>
+  <li>[5] <a href="https://codethechange.stanford.edu/guides/guide_kademlia.html#piecing-together-the-dht">Piecing together DHT</a></li>
+</ul>]]></content><author><name>Uddeshya Singh</name><email>singhuddeshyaofficial@gmail.com</email></author><category term="distributed-systems" /><category term="hash-tables" /><category term="algorithms" /><summary type="html"><![CDATA[I came across this exciting algorithm while watching this bit torrent series by Arpit [1] and honestly, it’s pretty exciting! I have been trying to make my own Torrent client and hopefully, will be able to publish some bare bones about its own implementation sometime in the future :D]]></summary></entry></feed>

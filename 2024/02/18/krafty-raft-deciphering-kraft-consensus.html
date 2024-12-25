@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang=" en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Krafty Raft: Deciphering KRaft consensus — 1 | Uddeshya’s Musings</title>
+<meta name="generator" content="Jekyll v4.3.4" />
+<meta property="og:title" content="Krafty Raft: Deciphering KRaft consensus — 1" />
+<meta name="author" content="Uddeshya Singh" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="My attempt to decipher the Raft whitepaper and how KRaft implementation adheres to the raft philosophy and techniques." />
+<meta property="og:description" content="My attempt to decipher the Raft whitepaper and how KRaft implementation adheres to the raft philosophy and techniques." />
+<meta property="og:site_name" content="Uddeshya’s Musings" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2024-02-18T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Krafty Raft: Deciphering KRaft consensus — 1" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Uddeshya Singh"},"dateModified":"2024-02-18T00:00:00+00:00","datePublished":"2024-02-18T00:00:00+00:00","description":"My attempt to decipher the Raft whitepaper and how KRaft implementation adheres to the raft philosophy and techniques.","headline":"Krafty Raft: Deciphering KRaft consensus — 1","mainEntityOfPage":{"@type":"WebPage","@id":"/2024/02/18/krafty-raft-deciphering-kraft-consensus.html"},"url":"/2024/02/18/krafty-raft-deciphering-kraft-consensus.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Uddeshya&apos;s Musings" />
+</head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Uddeshya&#39;s Musings</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Krafty Raft: Deciphering KRaft consensus — 1</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2024-02-18T00:00:00+00:00" itemprop="datePublished">
+        Feb 18, 2024
+      </time><div class="post-tags"><a href="/tags/#distributed-systems" class="post-tag">#distributed-systems</a><a href="/tags/#kafka" class="post-tag">#kafka</a><a href="/tags/#raft" class="post-tag">#raft</a><a href="/tags/#consensus-algorithms" class="post-tag">#consensus-algorithms</a></div></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>My attempt to decipher the Raft whitepaper and how KRaft implementation adheres to the raft philosophy and techniques.</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p><strong>This could be yet another run-of-the-mill post about the</strong> <strong><a href="https://raft.github.io/raft.pdf" title="@embed">raft consensus algorithm</a></strong> , possibly one of the least intimidating consensus algorithms that a system engineer might encounter in their career. My aim in this post is to highlight a couple of elements, apart from being a scribble note:</p>
+<ul>
+  <li>How KRaft is different from pure Raft.</li>
+  <li>Giving insights referring to implementation samples wherever possible to highlight the said difference.</li>
+</ul>
+
+<h1 id="moving-away-from-zookeeper">Moving away from zookeeper</h1>
+
+<p>Before we dive down into the Kraft algorithm itself, it’ll be good to understand the history of the alternative it’s replacing. Summarizing <a href="https://www.confluent.io/blog/why-replace-zookeeper-with-kafka-raft-the-log-of-all-logs/">Confluent’s blog on Zookeeper replacement</a>, one could conclude the following about Kafka's old architecture</p>
+
+<p>There used to be a single controller broker among other brokers whose primary differentiator among other brokers was storing <strong>cluster metadata like broker IDs and racks, topic, partition, leader and ISR information, and cluster-wide and per topic configs, as well as security credentials.</strong> Zookeeper’s majority of read/write traffic was directed via this controller node.
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*R_RVQWJa6rPE0arv44T8JQ.png" alt="Medium-Image" /></p>
+
+<p>The limitations of this setup were in terms of the controller’s scalability. Being a single node, it’s responsible for updating the broker’s metadata linearly per partition.</p>
+<ul>
+  <li>The majority of metadata change propagation between controller &lt;&gt; brokers was linear and was done in order of number of partitions, this proved to be a major bottleneck in scaling.</li>
+  <li>The maximum number of watchers, size limits on Znodes, etc proved to be a limitation regarding keeping Zookeeper as a metadata store.</li>
+</ul>
+
+<h2 id="enter-raft">Enter Raft</h2>
+
+<p>The fun part behind metadata storage in Zookeeper is that internally, it also stores a sequence of metadata update events, which you can imagine to be a <em>metadata log</em>  (to support watchers). So, why not store it as log storage across nodes where the state could be eventually consistent (aka, how raft does it!)
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*xL0WdQ6cHVPqG-yO_XJP2g.png" alt="Medium-Image" /></p>
+
+<h1 id="participating-entities-in-kraft-and-raft">Participating entities in KRaft and Raft</h1>
+
+<p>As per KIP-595’s illustrated <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-StateMachine">state machine</a>, there is one more state a broker could go to apart from the classic <strong>Follower</strong> , <strong>Candidate</strong> , and <strong>Leader</strong>  states called the <strong>Observer</strong>  state.
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*l8H3HVXj3Fhsn6CO5A-JXQ.png" alt="Medium-Image" /></p>
+
+<p>As per the above-mentioned KIP, each broker will act as an Observer and every controller node shall act as a Follower / Leader.</p>
+
+<p>I would have loved to go deeper into the metadata quorum data storage, but the <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-631%3A+The+Quorum-based+Kafka+Controller">KIP-631</a> specifying the same hasn’t been accepted yet :(</p>
+
+<h1 id="leader-election">Leader election</h1>
+
+<p>Let’s move on the the juicy bits, I was interested in how the leader elections take place, and being honest, there’s not a lot of difference between the two flavors of raft in this regard apart from the following distinctions:</p>
+<ul>
+  <li>A slice of time where a leader should serve is called <strong>Epoch</strong>  in KRaft whereas its counterpart in “pure” Raft is called <strong>Term</strong> .</li>
+  <li>In Kraft, a broker is allowed to vote for only a single broker in an epoch and this state is required even when the broker restarts, hence it’s stored in the disk in a <code class="language-plaintext highlighter-rouge">quorum-state</code>  file that is fsync’d immediately when appended. You can find the Quorum State structure <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-QuorumState">here</a>.</li>
+</ul>
+
+<h2 id="election-begins">Election Begins!</h2>
+
+<p>An important distinctive factor in Kraft and Raft is that the former is <em>pull-based</em>  while the latter is <em>push-based</em> which means that in Kraft, a voter(follower) keeps polling with the leader to find out the latest log entries (we’ll discuss this later in detail).</p>
+
+<p>Keeping this in mind, <strong>an election could be triggered in the following conditions</strong> :</p>
+<ul>
+  <li>If it fails to receive a valid <code class="language-plaintext highlighter-rouge">FetchResponse</code>  from the current leader before the expiration of <code class="language-plaintext highlighter-rouge">quorum.fetch.timeout.ms</code></li>
+  <li>If it receives a <code class="language-plaintext highlighter-rouge">EndQuorumEpoch</code>  request from the current leader notifying the end of the Leader’s current term (explained better in the zombie leader section)</li>
+  <li>If it fails to receive a majority of votes before the expiration of <code class="language-plaintext highlighter-rouge">quorum.election.timeout.ms</code>  after declaring itself a candidate.</li>
+</ul>
+
+<h2 id="the-voting-process">The voting process</h2>
+
+<p>Let’s say a controller node had to trigger the election due to one of the above-mentioned reasons, in their local persisted quorum state they’d increment the ongoing epoch and ask the peers to vote for them.</p>
+
+<p>In the <a href="https://raft.github.io/raft.pdf">raft paper</a>, section 5.4.1 (Election Restriction) illustrates the conditions for a peer to vote for a broker:</p>
+<ul>
+  <li>A voter decides if its term is &lt; the requester’s term or not.</li>
+  <li>It also verifies if the logs of the requester are at least up-to-date with its logs or not (it does so by comparing the last term and offsets).</li>
+</ul>
+
+<p>The Kraft implementation uses the same process to determine this apart from verifying if the broker’s candidateId was even expected to be a candidate or not. You can dive deep into code implementation in the <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L548C30-L548C47">handleVoteRequest()</a> method.</p>
+
+<h2 id="handling-voting-deadlock">Handling voting deadlock</h2>
+
+<p>Let’s say there was no clear majority through the election process, then there could be two scenarios:</p>
+<ul>
+  <li><strong>This was the first election,</strong>  in that event, the candidate steps down and waits for <em>quorum.election.backoff.max.ms</em> before retrying.</li>
+  <li><strong>This election took place when the leader stepped down</strong> , there’s a list of suggested future leaders as per their log’s offset. Here, for each candidate in a descending order, the backoff is configured as <code class="language-plaintext highlighter-rouge">MIN(retryBackOffMaxMs, retryBackoffMs * 2^(N - 1))</code>  where <strong>N</strong> is the position in the list.</li>
+</ul>
+
+<h2 id="announcing-the-election-win-and-stepping-down">Announcing the election win and stepping down</h2>
+
+<p>Once the leader is elected, it is supposed to send out a <strong>BeginEpochQuorum</strong> <em>**</em> message where every voter will verify the epoch for which the leader is claiming to win the election, recheck its own cached leader &amp; transition to the follower.</p>
+
+<p>Once the quorum's epoch time is finished, the leader transitions to a <strong>RESIGNED</strong>  state and sends all the peers <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-EndQuorumEpoch">EndQuorumEpoch</a> along with preferred candidates for the next leader election (as mentioned above).</p>
+
+<p>You can check more about the resignation mechanism in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L1970">pollResigned()</a> and how the followers have been handling this event in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L782">handleEndQuorumEpochRequest()</a>.</p>
+
+<h2 id="preventing-zombie-leaders">Preventing zombie leaders</h2>
+
+<p>Suppose a leader is elected during the epoch, the followers will keep asking for data till the end of the quorum epoch. However, once the epoch ends, and for some reason, <strong>the leader fails to resign (it might be offline)</strong> , the candidates by themselves will start a new election. Here the leader might not get the voting event altogether and when it restarts, it might still have the persistent state of being a leader. A famous case of a <strong>zombie leader</strong> .
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*909pdtnUWB_qCjNxbscdqg.png" alt="Medium-Image" /></p>
+
+<p>To handle this, if no other voter is coming up to fetch the metadata for <code class="language-plaintext highlighter-rouge">quorum.fetch.timeout.ms</code>  the leader will start a new election.</p>
+
+<p>If you notice the illustration above, let’s say <strong>A</strong>  was the leader in Epoch 1 but crashed, in the meantime the other followers decided to hold the election and elected <strong>B</strong>  as a new leader. By epoch 3, <strong>A</strong>  restarts and expects itself to be a leader (due to the persistent state). After the configured time passes it will try re-electing itself in epoch 2 but since the current epoch is 3, it’ll become a follower.</p>
+
+<p><strong>Caveat</strong> : Ideally, if a new leader is already present for the new election, this zombie leader should become a follower but if the zombie stays offline and joins later on while contacting the new candidates during the election, It might end up winning the elections given it achieves the rare condition of</p>
+<ul>
+  <li>Having a higher epoch than the rest of the peers.</li>
+  <li>Having most up-to-date log end offset (and somehow there’s an peer which has also up-to-date offset which didn’t win the election)</li>
+</ul>
+
+<h1 id="appending-logs">Appending logs</h1>
+
+<h2 id="pulling-vs-pushing">Pulling vs Pushing</h2>
+
+<p>In the raft literature, it’s a paradigm that the leader should be pushing its logs using “appendRPC” to its followers where the followers will acknowledge the same and append it to their logs.</p>
+
+<p>In KRaft, however, the onus is on the followers and observers to keep fetching the updates and recent logs by themselves using <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-595%3A+A+Raft+Protocol+for+the+Metadata+Quorum#KIP595:ARaftProtocolfortheMetadataQuorum-Fetch">Fetch API</a>.</p>
+
+<p>This aids in removing the scalability issue where a single controller node had to propagate the metadata updates to each broker by itself in worst case complexity of <code class="language-plaintext highlighter-rouge">O(partitions)</code></p>
+
+<h2 id="high-watermarks-and-log-end-offset">High watermarks and Log End Offset</h2>
+
+<p>Before we dive deeper into log appends, we should address a couple of important terms in Kraft’s replication literature.</p>
+
+<p><strong>High Watermark (HWM) —</strong> This is the highest log offset of a partition that has been replicated across a majority of the In Sync Replicas (ISR).</p>
+
+<p><strong>Log End Offset (LEO) —</strong> This is the highest log offset of a partition that has been appended on the local leader. This offset might not be replicated across the ISRs. Generally, a leader would move the high watermark only when a majority of the followers have replicated the message hence<code class="language-plaintext highlighter-rouge">(HWM &amp;lt;= LEO)</code></p>
+
+<h2 id="what-happens-when-followersobservers-invoke-fetchapi">What happens when Followers/Observers invoke FetchAPI?</h2>
+
+<p>One of the three things could’ve happened when followers invoke fetch API with their current LEO and term (implementation is elaborated in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/KafkaRaftClient.java#L940">HandleFetchRequest()</a> method)
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*IsY7DfuQ62Z6rzIFE2JByQ.png" alt="Medium-Image" /></p>
+<ul>
+  <li><strong>If the follower’s fetched log offset is currently 0</strong> , just return them the latest offset.</li>
+  <li><strong>If the follower’s fetched offset &gt;log fetch offset</strong>  in leader or simply the epochs don’t match, then it’s a divergent case.</li>
+  <li><strong>All good</strong> ? Then it’s a valid case and update the log end offset for this follower. After this, if high watermark can be updated (implemented in <a href="https://github.com/apache/kafka/blob/e247bd03afe66d61426a9029220d06438dede3dc/raft/src/main/java/org/apache/kafka/raft/LeaderState.java#L210">maybeUpdateHighWatermark()</a> ). The overall idea is to check the log end offsets of peers in descending order, find the offset of <strong>n/2th</strong>  peer and if the high water mark of said peer is &lt; replicated offset, then update the same)</li>
+</ul>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>By this illustration, I hope I was able to draw a decent comparison between subtle differences among KRaft and Raft. I hope to elaborate more on the Snapshotting semantics in the next blog post (Elaborated in <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-630%3A+Kafka+Raft+Snapshot#KIP630:KafkaRaftSnapshot-RejectedAlternatives">KIP-630</a>). Until next time, peace!</p>
+
+  </div><a class="u-url" href="/2024/02/18/krafty-raft-deciphering-kraft-consensus.html" hidden></a>
+</article>
+
+    </div>
+  </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col">
+        <p class="feed-subscribe">
+          <a href="/feed.xml">
+            <svg class="svg-icon orange">
+              <use xlink:href="/assets/minima-social-icons.svg#rss"></use>
+            </svg><span>Subscribe</span>
+          </a>
+        </p>
+        <ul class="contact-list">
+          <li class="p-name">Uddeshya Singh</li>
+          <li><a class="u-email" href="mailto:singhuddeshyaofficial@gmail.com">singhuddeshyaofficial@gmail.com</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p>My technical ramblings, long and short.
+</p>
+      </div>
+    </div>
+
+    <div class="social-links"><ul class="social-media-list"><li>
+  <a rel="me" href="https://github.com/uds5501" target="_blank" title="github">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#github"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://twitter.com/uds5501" target="_blank" title="twitter">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#twitter"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://www.linkedin.com/in/singhuddeshya5501/" target="_blank" title="linkedin">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#linkedin"></use>
+    </svg>
+  </a>
+</li>
+</ul>
+</div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
+
+<script type="text/javascript">
+  MathJax = {
+      tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      }
+  };
+</script>
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>

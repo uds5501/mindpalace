@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang=" en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Bustub’s extendible hash tables (CMU-15445) | Uddeshya’s Musings</title>
+<meta name="generator" content="Jekyll v4.3.4" />
+<meta property="og:title" content="Bustub’s extendible hash tables (CMU-15445)" />
+<meta name="author" content="Uddeshya Singh" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Welcome to my take on the implementation of extendible hash tables (minus the code btw, owning to the educational policies)" />
+<meta property="og:description" content="Welcome to my take on the implementation of extendible hash tables (minus the code btw, owning to the educational policies)" />
+<meta property="og:site_name" content="Uddeshya’s Musings" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2023-11-23T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Bustub’s extendible hash tables (CMU-15445)" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Uddeshya Singh"},"dateModified":"2023-11-23T00:00:00+00:00","datePublished":"2023-11-23T00:00:00+00:00","description":"Welcome to my take on the implementation of extendible hash tables (minus the code btw, owning to the educational policies)","headline":"Bustub’s extendible hash tables (CMU-15445)","mainEntityOfPage":{"@type":"WebPage","@id":"/2023/11/23/bustub-extendible-hash-table.html"},"url":"/2023/11/23/bustub-extendible-hash-table.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Uddeshya&apos;s Musings" />
+</head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Uddeshya&#39;s Musings</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Bustub’s extendible hash tables (CMU-15445)</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2023-11-23T00:00:00+00:00" itemprop="datePublished">
+        Nov 23, 2023
+      </time><div class="post-tags"><a href="/tags/#databases" class="post-tag">#databases</a><a href="/tags/#cmu-15445" class="post-tag">#cmu-15445</a><a href="/tags/#hash-tables" class="post-tag">#hash-tables</a></div></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Welcome to my take on the implementation of extendible hash tables (minus the code btw, owning to the educational policies)</p>
+
+<h1 id="motivation">Motivation</h1>
+
+<p>I have been recently getting my hands dirty with C++ internal semantics and the implementation of different kinds of database internals and “the learning curve is steep” is an understatement, <em>exhibit A</em>—</p>
+
+<div class="jekyll-twitter-plugin"><blockquote class="twitter-tweet"><p lang="en" dir="ltr">I DID IT 😭<br />I FINALLY DID IT.<br />SO MANY DAYS THINKING MY LOGIC WAS WRONG. I WAS JUST USING THE GODDAMN WRONG HASH FUNCTION I WANNA CRY.<br /><br />My tomorrow&#39;s gym session is fucked but AT LEAST I got it right 😭 <a href="https://t.co/cIWisF95yM">pic.twitter.com/cIWisF95yM</a></p>&mdash; Uddeshya Singh (@uds5501) <a href="https://twitter.com/uds5501/status/1728920117839622408?ref_src=twsrc%5Etfw">November 26, 2023</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+</div>
+
+<p>In this post, I will be discussing the implementation (overview) of the Bustub <strong>extendible hashtable index insertions</strong>. For some context, <a href="https://15445.courses.cs.cmu.edu/fall2023/"><strong>CMU-15445</strong></a> is an excellent course that stands out for its comprehensive approach to database systems. Its unique blend of theoretical foundations and practical applications provides students with a solid understanding of the intricacies involved in managing and building data stores.</p>
+
+<p>Personally, this is my second attempt at this course, and making some headway has been amazing. For this post, we’ll be discussing Project 2 (<a href="https://15445.courses.cs.cmu.edu/fall2023/project2/">Hash Index</a>), building our own hash index using extendible hash tables!</p>
+
+<p>I tried my best to figure out a good source to discuss this particular assignment but there didn’t seem to be a lot many articles in English. A few notable ones that I came across were :</p>
+
+<ul>
+  <li><a href="https://jameywoo.github.io/post/cmu15-445/project2-extendible-hash-index/#task-2---hash-table-implementation">https://jameywoo.github.io/post/cmu15-445/project2-extendible-hash-index/#task-2—hash-table-implementation</a></li>
+  <li><a href="https://auzdora.github.io/2023/03/22/Extendible_Hash_Table/">https://auzdora.github.io/2023/03/22/Extendible_Hash_Table/</a></li>
+</ul>
+
+<h1 id="eh-so-whats-hashing"><strong>Eh, so what’s hashing?</strong></h1>
+
+<p>For the uninitiated, a hashtable in simplest terms is a key value store data structure in which, before inserting a key, you’d hash it (which will decide in which bucket will this key land) and store it. Primarily, you’d have three simple operations for the hash table which are:</p>
+
+<ol>
+  <li>Insert(key, value)</li>
+  <li>Delete(key)</li>
+  <li>Get(key)</li>
+</ol>
+
+<p>As you can think, there might be multiple approaches to achieve this, we can broadly categorize them into a couple of sections <strong>static</strong> and <strong>dynamic</strong> hash tables.</p>
+
+<h2 id="static-hash-tables">Static Hash Tables</h2>
+
+<p>The general theme of these hashtables is that they will have a <strong>fixed number of slots</strong> and differ in the way they handle <em>collisions</em> and <em>deletions</em>.</p>
+
+<p>Some of the techniques are</p>
+
+<p><strong>Linear Probing</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*aDXjf5kzPTYa8QM6dw7AgQ.png" alt="captionless image" /></p>
+
+<ul>
+  <li><em>Inserts</em>: Hashes the key to an index and if the slot is already full, moves on to the next one linearly and loops around if reaches the end of the array.</li>
+  <li><em>Deletes</em>: You can put tombstones on the slots after deletion, this will be treated as an open slot during insertion and will be ignored during key lookup.</li>
+</ul>
+
+<p><strong>Robin Hood Hashing</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*NY_H1vSVpAuHA_YYFS3IaA.png" alt="captionless image" /></p>
+
+<ul>
+  <li><em>Inserts</em>: The insertion here is a bit weird… If the hashed slot is free, we’ll insert the key right here. But if it isn’t, we’ll linearly go down and pick the first slot according to:
+    <ol>
+      <li><strong><em>Is the slot free</em></strong>? If yes just put the new key there and also store how far was it from the original index.</li>
+      <li><strong><em>If not</em></strong>, then check if the current key is farther from its hashed slot. If not, then this new key will take its place and the old key will be pushed further.</li>
+    </ol>
+  </li>
+</ul>
+
+<h2 id="dynamic-hash-tables">Dynamic Hash Tables</h2>
+
+<p>The theme here is that we can increase and decrease the overall size of the hashtables according to a fixed set of constraints, ideally, you can fit any number of keys if you let the data structure grow further enough without complete key reallocation.</p>
+
+<p><strong>Chained Hashing</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*O7oNs1KBJhZSMmphptSlZQ.png" alt="captionless image" /></p>
+
+<p><em>Insertion</em>: Each key is hashed to a slot and every key is chained in a linked list. It could grow infinitely large but the searching complexity would be really bad. (Could be linear if all the keys are getting hashed to only a few buckets)</p>
+
+<h1 id="finally-extendible-hash-tables"><strong>Finally, Extendible Hash Tables</strong></h1>
+
+<p>Our project two assignment was to create an extendible hash table (with a slight twist). A general extendible hash table would utilize the <em>global</em> and <em>local depths</em> to determine the bucket where the key should land and local depths to check how many bucket slots would point to this bucket.</p>
+
+<p>We follow this general rule during insertion:</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*9L4o2SMjWsO0C2jiyytTLQ.png" alt="Insertion process for extendible hash tables." /></p>
+
+<p><em>The above diagram’s slightly complicated ya?</em> I agree, let me help and explain the overall idea. When you are inserting a key, you’d first check if there’s an appropriate empty bucket where the table could keep the key. If there’s some space, just push the key and forget.</p>
+
+<p>If there’s no space though, you’d want to either expand the bucket or expand the table and make some space, for that to happen, you’ll</p>
+
+<ul>
+  <li>First, verify if the bucket you want to push the key in has <strong>local_depth &lt; global_depth</strong><em>.</em> If that’s the case, you can just split the bucket in two and insert the new key accordingly.</li>
+  <li>Second, if the <code class="language-plaintext highlighter-rouge">local_depth==global_depth</code> you would want to expand the directory by incrementing the global depth.</li>
+</ul>
+
+<p>Let’s list down the type of fundamental database pages involved one by one and later on dry-run with an example.</p>
+
+<h2 id="header-page">Header Page</h2>
+
+<p>A single header page will have multiple directory pages. You can route the hashed keys according to the <strong>most significant bits</strong> (I will show that in the dry run) to a particular directory page. You could imagine this as a <em>phone book of directories</em>.</p>
+
+<h2 id="directory-page">Directory Page</h2>
+
+<p>A single directory page will contain multiple buckets and each directory page will have the concept of</p>
+
+<ol>
+  <li><strong>Maximum depth</strong>: The maximum size a directory can expand to</li>
+  <li><strong>Global depth</strong>: The current depth of the directory. A directory can support a maximum of <code class="language-plaintext highlighter-rouge">1&lt;&lt;global_depth</code> buckets.</li>
+</ol>
+
+<p>You’ll route the hashed keys to different buckets according to the <strong>least significant bits</strong>. (again, will show an example!)</p>
+
+<h2 id="bucket-page">Bucket Page</h2>
+
+<p>The bucket page will contain the key-value pairs. Each bucket will have:</p>
+
+<ol>
+  <li><strong>Maximum size</strong>: Total number of keys allowed.</li>
+  <li><strong>Local depth:</strong> This local depth is used to determine whether a key is supposed to stay in this bucket or not during bucket split/merge. In a directory, <code class="language-plaintext highlighter-rouge">exp(2, global_depth-local_depth)</code> slots will be pointing to this bucket btw!
+It’s also used to check during a bucket split, whether the keys that are present should stay or be migrated to a new bucket.</li>
+</ol>
+
+<h2 id="example">Example</h2>
+
+<p>Now, let’s consider the following scenario, We have the hashtable configuration as:</p>
+
+<ul>
+  <li><strong>header_depth = 1</strong></li>
+  <li><strong>maximum_global_depth = 3</strong></li>
+  <li><strong>maximum_bucket_size = 2</strong></li>
+</ul>
+
+<p>The keys and values will be <code class="language-plaintext highlighter-rouge">uint32</code> and for demo’s sake, let’s assume our hash function is <code class="language-plaintext highlighter-rouge">Hash(x) = x</code> (<em>I know, pretty catastrophic</em> 😅)</p>
+
+<p>Now, in this hashtable, let’s perform the following operations.</p>
+
+<h2 id="operation-1--insert-23-23">Operation 1 — Insert &lt;23, 23&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*HTGcs5jFsExamqX53t0qYw.png" alt="Inserting key=23 in hashtable" /></p>
+
+<p>Two salient features I’ll ask you to focus on are the following steps:</p>
+
+<ul>
+  <li><strong>Step 2</strong>: When we are routing the key to the correct directory, we use the most significant bits of the hash to the resolution of the required bits, hence only the bold bits were required in directory routing bit: <strong>1</strong>0111,</li>
+  <li><strong>Step 5</strong>: Routing to the correct bucket, we use the least significant bits and the global depth. Well, right now the global depth of the directory is 0 so everything goes to the single slot!</li>
+</ul>
+
+<h2 id="operation-2--insert-77">Operation 2- Insert &lt;7,7&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*66EkNxbjAolRTNZkAND9oQ.png" alt="Inserting key=7 in the extendible hash table" /></p>
+
+<p>The only thing different from the last example is that it got routed to the <em>0th</em> header slot rather than the <em>1th</em>! Else, it’s business as usual.</p>
+
+<h2 id="operation-3-inserting-19-19">Operation 3: Inserting &lt;19, 19&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*pTWpPxMxCKgyVGrXW9qMgw.png" alt="Inserting key 19 to hashtable" /></p>
+
+<p>yes yes yes, I cut a few corners in this step but it’s pretty self-explanatory! We routed the request to the directory at header[1] and the only bucket present in the bucket following the old rules.</p>
+
+<h2 id="operation-4-inserting-20-20">Operation 4: Inserting &lt;20, 20&gt;</h2>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*UbfEyhvM_Xqh7GrN4z4xXA.png" alt="Inserting 20 in hashtable" /></p>
+
+<p>Now this is where things get interesting… 😋</p>
+
+<p>You can’t insert the new key in the old bucket because it’s full, this is where the <em>extensibility</em> of this hash table comes in handy!</p>
+
+<p>Since <code class="language-plaintext highlighter-rouge">local_depth == global_depth &amp;&amp; lobal_depth++ &lt; maximum_global_depth</code> , we have to expand this directory. During expansion, we create a new <code class="language-plaintext highlighter-rouge">1th</code> index which is initially not pointed to anything, How do we figure out where should this new slot point to? I used the below-mentioned hacky algorithm to figure it out. (Kindly note, this ain’t the most elegant algorithm around to tackle this problem btw).</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="n">ExtendibleHTableDirectoryPage</span><span class="o">::</span><span class="n">IncrGlobalDepth</span><span class="p">()</span> <span class="p">{</span>
+  <span class="n">LOG_DEBUG</span><span class="p">(</span><span class="s">"----Increasing global depth-----"</span><span class="p">);</span>
+  <span class="c1">// assert(global_depth_+1 &lt;= max_depth_);</span>
+  <span class="n">global_depth_</span><span class="o">++</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">global_depth_</span><span class="p">);</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">==</span> <span class="n">INVALID_PAGE_ID</span><span class="p">)</span> <span class="p">{</span>
+      <span class="c1">// 0XXXX or 1XXXX needs to point to same bucket as  --&gt; XXXX</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">LOG_DEBUG</span><span class="p">(</span><span class="s">"Found invalid page id at %u, pointing it to %u's data"</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">^</span> <span class="mi">1</span><span class="p">);</span>
+        <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span> <span class="o">^</span> <span class="mi">1</span><span class="p">];</span>
+        <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span> <span class="o">^</span> <span class="mi">1</span><span class="p">];</span>
+      <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">right_shift_mask</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">global_depth_</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+          <span class="n">right_shift_mask</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">global_depth_</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+          <span class="n">right_shift_mask</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="n">global_depth_</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="n">LOG_DEBUG</span><span class="p">(</span><span class="s">"Found invalid page id at %u, pointing it to %u's data"</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">&amp;</span> <span class="n">right_shift_mask</span><span class="p">);</span>
+        <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">bucket_page_ids_</span><span class="p">[</span><span class="n">i</span> <span class="o">&amp;</span> <span class="n">right_shift_mask</span><span class="p">];</span>
+        <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_depths_</span><span class="p">[</span><span class="n">i</span> <span class="o">&amp;</span> <span class="n">right_shift_mask</span><span class="p">];</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Once the directory expansion is taken care of, we start the second task, actually splitting the older bucket and migrating keys accordingly.</p>
+
+<p>Since <code class="language-plaintext highlighter-rouge">directory[0] = old_bucket</code> , we’ll ensure the following:</p>
+
+<ul>
+  <li>The new bucket is accessible by the appropriate index in the directory.</li>
+  <li>The keys present in the old bucket should stay if they satisfy the <code class="language-plaintext highlighter-rouge">key &amp;((1 &lt;&lt; local_depth)-1)</code></li>
+</ul>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Kindly note that this is just a dummy run about insertions in extendible hash tables. The <em>Get</em> and <em>Remove</em> operations will follow similar suites.</p>
+
+<p>There are many more internal operations required in the project, which were not covered in this blog, to name a couple:</p>
+
+<ul>
+  <li><strong>Resize</strong> (merge) multiple buckets into one upon removal of enough keys and subsequently shrink the directory pages.</li>
+  <li>To <strong>ensure concurrent access</strong>, you can apply appropriate read and write latches on the pages.</li>
+</ul>
+
+<p>I hope I could give you guys a gist of the beauty of an extendable hashtable index in terms of dynamic reallocation. To understand more, I’d recommend you to watch <a href="https://youtu.be/eBgKVqFUUlA?si=3UYQ-GLuo1YRIOGc&amp;t=3581">this lecture</a> by Mr. Pavlo.</p>
+
+<p>PS: I will update this post further as I progress with the above-mentioned requirements :)</p>
+
+  </div><a class="u-url" href="/2023/11/23/bustub-extendible-hash-table.html" hidden></a>
+</article>
+
+    </div>
+  </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col">
+        <p class="feed-subscribe">
+          <a href="/feed.xml">
+            <svg class="svg-icon orange">
+              <use xlink:href="/assets/minima-social-icons.svg#rss"></use>
+            </svg><span>Subscribe</span>
+          </a>
+        </p>
+        <ul class="contact-list">
+          <li class="p-name">Uddeshya Singh</li>
+          <li><a class="u-email" href="mailto:singhuddeshyaofficial@gmail.com">singhuddeshyaofficial@gmail.com</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p>My technical ramblings, long and short.
+</p>
+      </div>
+    </div>
+
+    <div class="social-links"><ul class="social-media-list"><li>
+  <a rel="me" href="https://github.com/uds5501" target="_blank" title="github">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#github"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://twitter.com/uds5501" target="_blank" title="twitter">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#twitter"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://www.linkedin.com/in/singhuddeshya5501/" target="_blank" title="linkedin">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#linkedin"></use>
+    </svg>
+  </a>
+</li>
+</ul>
+</div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
+
+<script type="text/javascript">
+  MathJax = {
+      tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      }
+  };
+</script>
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>

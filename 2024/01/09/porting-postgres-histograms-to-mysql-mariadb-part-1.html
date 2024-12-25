@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang=" en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Porting Postgres histograms to MySQL (MariaDB): Part 1 | Uddeshya’s Musings</title>
+<meta name="generator" content="Jekyll v4.3.4" />
+<meta property="og:title" content="Porting Postgres histograms to MySQL (MariaDB): Part 1" />
+<meta name="author" content="Uddeshya Singh" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="A more accurate title would’ve been porting Postgres’ conditional selectivity to MySQL, but you’d ask me what’s conditional selectivity then! This blog post series will explain both." />
+<meta property="og:description" content="A more accurate title would’ve been porting Postgres’ conditional selectivity to MySQL, but you’d ask me what’s conditional selectivity then! This blog post series will explain both." />
+<meta property="og:site_name" content="Uddeshya’s Musings" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2024-01-09T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Porting Postgres histograms to MySQL (MariaDB): Part 1" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Uddeshya Singh"},"dateModified":"2024-01-09T00:00:00+00:00","datePublished":"2024-01-09T00:00:00+00:00","description":"A more accurate title would’ve been porting Postgres’ conditional selectivity to MySQL, but you’d ask me what’s conditional selectivity then! This blog post series will explain both.","headline":"Porting Postgres histograms to MySQL (MariaDB): Part 1","mainEntityOfPage":{"@type":"WebPage","@id":"/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1.html"},"url":"/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Uddeshya&apos;s Musings" />
+</head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Uddeshya&#39;s Musings</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Porting Postgres histograms to MySQL (MariaDB): Part 1</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2024-01-09T00:00:00+00:00" itemprop="datePublished">
+        Jan 9, 2024
+      </time><div class="post-tags"><a href="/tags/#databases" class="post-tag">#databases</a><a href="/tags/#mysql" class="post-tag">#mysql</a><a href="/tags/#query-optimization" class="post-tag">#query-optimization</a><a href="/tags/#statistics" class="post-tag">#statistics</a><a href="/tags/#postgres" class="post-tag">#postgres</a></div></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>A more accurate title would’ve been porting Postgres’ conditional selectivity to MySQL, but you’d ask me what’s conditional selectivity then! This blog post series will explain both.</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p>I have been hacking around since last week in MySQL/MariaDB hack week (organization courtesy — <a href="https://eatonphil.com/">Phil!</a>) with ~80 odd brilliant hackers. Going into the hack week, my goal was to figure out how a SELECT query works in MariaDB and how its Query Execution Planner(QEP) internally works.</p>
+
+<blockquote>
+  <p>The rough notes that I took through the week around QEP notes can be found here in <a href="https://gist.github.com/uds5501/fbb2f96c24f24c21500926e5ffb35b91">this gist</a>. If you already know about selectivity concept in databases thoroughly, you can skip to part 2, to the actual implementation.</p>
+</blockquote>
+
+<p>During my QEP code read, I realized that all the plans are built around pre-calculated statistics for Tables, Indexes, and Columns (in MySQL). These plans may sometimes utilize histograms to determine the selectivity of rows on un-indexed columns, while I can’t change the QEP algorithm in a week, I sure as hell can implement some data structures! But before we get there in the implementation details, let’s address the elephant in the room.</p>
+
+<h1 id="whats-selectivity">What’s Selectivity?</h1>
+
+<p>Imagine you have the following table</p>
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="n">sample_table</span> <span class="p">(</span>
+  <span class="n">id</span> <span class="nb">INT</span> <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="n">AUTO_INCREMENT</span><span class="p">,</span>
+  <span class="n">i</span> <span class="nb">INT</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+  <span class="n">d</span> <span class="nb">DOUBLE</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">);</span>
+
+<span class="n">CREATE_TABLE</span> <span class="n">sample_inner_table</span> <span class="p">{</span>
+  <span class="n">id</span> <span class="nb">INT</span> <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="n">AUTO_INCREMENT</span><span class="p">,</span>
+  <span class="n">i</span> <span class="nb">INT</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">CREATE</span> <span class="k">INDEX</span> <span class="n">sample_table_d</span> <span class="k">on</span> <span class="n">sample_table</span><span class="p">(</span><span class="n">d</span><span class="p">);</span>
+
+<span class="o">//</span> <span class="n">Imagine</span> <span class="n">sample_table</span> <span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span><span class="n">sample_inner_table</span> <span class="n">has</span> <span class="mi">20</span><span class="p">,</span><span class="mi">000</span><span class="p">,</span><span class="mi">000</span> <span class="k">rows</span><span class="p">.</span>
+</code></pre></div></div>
+
+<p>Now, imagine you run the following query</p>
+
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">id</span><span class="p">,</span><span class="n">sample_inner_table</span><span class="p">.</span><span class="n">id</span> <span class="k">AS</span> <span class="n">inner_id</span>
+<span class="k">FROM</span> <span class="n">sample_table</span>
+<span class="k">JOIN</span> <span class="n">sample_inner_table</span> <span class="k">ON</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">i</span> <span class="o">=</span> <span class="n">sample_inner_table</span><span class="p">.</span><span class="n">i</span>
+<span class="k">WHERE</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">d</span> <span class="o">&gt;</span> <span class="mi">10</span><span class="p">.</span><span class="mi">0</span>
+  <span class="k">AND</span> <span class="n">sample_inner_table</span><span class="p">.</span><span class="n">id</span> <span class="o">&gt;</span> <span class="mi">5</span>
+  <span class="k">AND</span> <span class="n">sample_table</span><span class="p">.</span><span class="n">i</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Your database’s query planner will try and estimate the following query plans (among other plans)</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*0SeeRgzOIuFgTxJd9uRYAQ.png" alt="Medium-Image" /></p>
+
+<p>To estimate the IO Cost and the number of rows it’ll need to pass on to the join in Select predicates, i.e, <em>σ(id&gt;5)</em> and <em>σ(i=3 AND d&gt;),</em> your database can either use indexes (which it’ll most probably use for <em>σ(d&gt;10)</em> ) or it will use existing histograms / similar data structures to determine how many rows I want to send to the next step, this ratio is called <strong>selectivity</strong> .</p>
+
+<p>Rows sent to the next stage would be $selectivity * totalrows$</p>
+
+<p>You can learn more about it in CMU’s <strong>F2023 #14 — Query Planning &amp; Optimization</strong></p>
+<iframe width="680" height="382" src="https://www.youtube.com/embed/ePGPVJCyCAk" title="F2023 #14 - Query Planning &amp; Optimization (CMU Intro to Database Systems)" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen=""></iframe>
+
+<h1 id="how-does-mariadbmysql-do-it">How does MariaDB/MySQL do it?</h1>
+
+<p>As of <a href="https://github.com/MariaDB/server">MariaDB 11.4</a>, there are 3 histogram implementations, two of them are height-balanced (<strong>SINGLE_PREC_HB</strong>  and <strong>DOUBLE_PREC_HB</strong> ) and by default, they use somewhat new <strong>JSON_HB (</strong> I have a hunch this is already similar to postgres, based on the values but I haven’t checked it’s implementation :) )</p>
+
+<blockquote>
+  <p>Fun Fact: JSON_HB was introduced as a Google Summer of Code Project, as per this <a href="https://jira.mariadb.org/browse/MDEV-28113">JIRA</a>.</p>
+</blockquote>
+
+<p>I will currently take the example of <strong>SINGLE_PREC_HB</strong> and explain how histogram building works in its context.</p>
+
+<p>Imagine the total rows in the table to be <strong>R</strong> , and the histogram width to be <strong>w,</strong> so each bucket in the histogram would take <strong>R/w</strong>  records. In the bucket, however, you’ll be storing the relative position of the current element where the relative position is determined by <code class="language-plaintext highlighter-rouge">(current_element-min_element)/(max_element-min_element)</code>  in the column.</p>
+
+<p>The image below should make more sense 😄
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*jT42VvALhNLqtEMNPr0t7w.png" alt="Medium-Image" /></p>
+
+<p>You can find the algorithm of histogram building below but as an overview, if the current cumulative row count &gt; bucket * capacity, then I’ll set the interval position in this bucket otherwise I’ll proceed to the next distinct element.</p>
+
+<p>Ex: The cumulative count while processing Element 9 would be 6 + 10 + 3 (16).</p>
+
+<div class="link-preview">
+    <a href="https://github.com/MariaDB/server/blob/c0c1c80346b926ea1358aa512374d72d513299b0/sql/sql_statistics.cc" target="_blank">
+        <h4>Histogram_binary_builder::next()- MariaDB/server</h4>
+        <p>MariaDB server is a community developed fork of MySQL server. Started by core members of the original MySQL team...</p>
+        <span class="domain">github.com</span>
+    </a>
+</div>
+
+<p>Now, when you are running the query:</p>
+<div class="language-sql highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">SELECT</span> <span class="o">*</span> <span class="k">FROM</span> <span class="n">sample_table</span> <span class="k">WHERE</span> <span class="n">v</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="k">and</span> <span class="n">v</span> <span class="o">&lt;=</span> <span class="mi">14</span><span class="p">;</span> 
+</code></pre></div></div>
+
+<p>It’ll convert 2 and 14 to respective estimated positions (here, they’ll be <code class="language-plaintext highlighter-rouge">0.00</code>  and <code class="language-plaintext highlighter-rouge">0.6875</code>  respectively). Now, you’ll try and find the buckets where these values can lie. So, your min bucket index will be 1, and the max bucket index will be 7. Hence <strong>the planner can send you rows stored in an estimated 7 buckets!</strong></p>
+
+<p>Since you have a total 10 buckets, the <strong><em>selectivity</em></strong>  becomes <code class="language-plaintext highlighter-rouge">7/10</code>  or <code class="language-plaintext highlighter-rouge">0.700</code>  and the QEP will be returning an estimated <code class="language-plaintext highlighter-rouge">0.700*25</code>  = <strong>18 rows.</strong></p>
+
+<p>This way of estimating selectivity is called <a href="https://github.com/MariaDB/server/blob/11.4/sql/sql_select.cc#L1044"><em>range_selectivity</em></a> !</p>
+
+<h1 id="sweet-but-how-does-postgres-do-it">Sweet! But how does postgres do it?</h1>
+
+<p>Postgres handles different kinds of data types differently, but to keep this discussion simple, we’ll stick with integers. To read the implementation detail better, I’d suggest reading this <a href="https://www.postgresql.org/docs/13/row-estimation-examples.html">row estimation algorithm</a>.</p>
+
+<p>Unlike MySQL, postgres distributes its buckets to hold different value bounds.
+<img src="https://miro.medium.com/v2/resize:fit:640/format:webp/1*wLHcMBgfE6QvacHpFppCDg.png" alt="Medium-Image" /></p>
+
+<p>If you notice here, we don’t talk about the frequencies of the element appearing 🤔. We just assume that all the buckets have equal chance of appearing (as MySQL does) and selectivity of an element in a bucket is determined by $(element - \text{min_bound}) / (\text{max_bound}-\text{min_bound})$  , sounds familiar no? 😉</p>
+
+<p>That being said, let’s estimate what happens when we run the query:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SELECT * FROM sample_table WHERE v &gt;= 2 and v&lt;=14;
+</code></pre></div></div>
+
+<p>As we can see, <code class="language-plaintext highlighter-rouge">v&gt;=2 and v&lt;= 14</code> means buckets 1–7 will be completely included in this range and bucket 8 will be partially included.</p>
+
+<p>So, the selectivity shall be $(7+(0/2))/10 = 0.700$</p>
+
+<p>Funny how the selectivity turns out to be the exact same in both histogram layouts no? 🚀</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>I hope you now understand <strong>selectivity</strong> ! I’ll request you to go and play around with this concept first before we move on to the porting implementation details in the <a href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-2.html">next blog post</a>.</p>
+
+  </div><a class="u-url" href="/2024/01/09/porting-postgres-histograms-to-mysql-mariadb-part-1.html" hidden></a>
+</article>
+
+    </div>
+  </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col">
+        <p class="feed-subscribe">
+          <a href="/feed.xml">
+            <svg class="svg-icon orange">
+              <use xlink:href="/assets/minima-social-icons.svg#rss"></use>
+            </svg><span>Subscribe</span>
+          </a>
+        </p>
+        <ul class="contact-list">
+          <li class="p-name">Uddeshya Singh</li>
+          <li><a class="u-email" href="mailto:singhuddeshyaofficial@gmail.com">singhuddeshyaofficial@gmail.com</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p>My technical ramblings, long and short.
+</p>
+      </div>
+    </div>
+
+    <div class="social-links"><ul class="social-media-list"><li>
+  <a rel="me" href="https://github.com/uds5501" target="_blank" title="github">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#github"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://twitter.com/uds5501" target="_blank" title="twitter">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#twitter"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://www.linkedin.com/in/singhuddeshya5501/" target="_blank" title="linkedin">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#linkedin"></use>
+    </svg>
+  </a>
+</li>
+</ul>
+</div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
+
+<script type="text/javascript">
+  MathJax = {
+      tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      }
+  };
+</script>
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>

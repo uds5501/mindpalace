@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang=" en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Pushing Redis Sentinels to their limit | Uddeshya’s Musings</title>
+<meta name="generator" content="Jekyll v4.3.4" />
+<meta property="og:title" content="Pushing Redis Sentinels to their limit" />
+<meta name="author" content="Uddeshya Singh" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Script and tips on how to set up multiple master-replica Redis instances and multiple Redis sentinels to monitor them." />
+<meta property="og:description" content="Script and tips on how to set up multiple master-replica Redis instances and multiple Redis sentinels to monitor them." />
+<meta property="og:site_name" content="Uddeshya’s Musings" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2023-06-23T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Pushing Redis Sentinels to their limit" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Uddeshya Singh"},"dateModified":"2023-06-23T00:00:00+00:00","datePublished":"2023-06-23T00:00:00+00:00","description":"Script and tips on how to set up multiple master-replica Redis instances and multiple Redis sentinels to monitor them.","headline":"Pushing Redis Sentinels to their limit","mainEntityOfPage":{"@type":"WebPage","@id":"/2023/06/23/pushing-redis-sentinels-to-their-limit.html"},"url":"/2023/06/23/pushing-redis-sentinels-to-their-limit.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Uddeshya&apos;s Musings" />
+</head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Uddeshya&#39;s Musings</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Pushing Redis Sentinels to their limit</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2023-06-23T00:00:00+00:00" itemprop="datePublished">
+        Jun 23, 2023
+      </time><div class="post-tags"><a href="/tags/#redis" class="post-tag">#redis</a><a href="/tags/#benchmarking" class="post-tag">#benchmarking</a></div></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Script and tips on how to set up multiple master-replica Redis instances and multiple Redis sentinels to monitor them.</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p>Before I even introduce this script, allow me to explain why did I even need to write this? Currently, there is <strong>no maximum limit documented on the number of masters a single Redis sentinel can monitor</strong> at the same time (at least I couldn’t find any after hours of scouring through the <a href="https://redis.io/docs/management/sentinel/">Redis Sentinel documentation</a>[1] and their client spec 😢) and I wanted to test the scalability of these</p>
+
+<p>I turned to our good AI friend, chat GPT for its help, who, very weirdly stated that <strong>“Redis 6.x can monitor up to 10 masters.”</strong></p>
+
+<div class="link-preview">
+    <a href="https://chat.openai.com/share/34f8bf31-3bd4-46a9-b596-5851463cb7d1" target="_blank">
+        <h4>Redis Sentinel: Max Masters</h4>
+        <p>A conversational AI system that listens, learns, and challenges</p>
+        <span class="domain">chat.openai.com</span>
+    </a>
+</div>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*jwFwtB0O7tytDWY8VPqxeQ.png" alt="Chat GPT stating the limit of a maximum of 10 masters" /></p>
+
+<p>This was bad news for me because I didn’t want Redis Sentinels to be a point of failure in the scenario I want them to monitor the production level, which is <strong>easily &gt;25</strong> Redis master-replica instances. So I decided to go ahead and do what every good engineer should do, create a small POC and test this claim 😁</p>
+
+<h1 id="small-experiment-">Small Experiment 🧪</h1>
+
+<p>I created this small script to generate a couple of things :</p>
+
+<ol>
+  <li>Docker Compose file which contains the following instances:
+    <ul>
+      <li>configurable number of Redis master-replica instances.</li>
+      <li>configurable number of Redis sentinels.</li>
+    </ul>
+  </li>
+  <li>Redis Sentinel configuration files.
+    <ul>
+      <li>Creates as many configurations as the number of Redis sentinels.
+here?</li>
+    </ul>
+  </li>
+</ol>
+
+<noscript><pre>400: Invalid request</pre></noscript>
+<script src="https://gist.github.com/df499fb528127beb889eb1236718f585.js"> </script>
+
+<h2 id="steps-to-use-this-script">Steps to use this script</h2>
+
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// I am assuming benchmark is your present working directory.
+<span class="nv">$ </span><span class="nb">cd </span>benchmark 
+<span class="nv">$ </span><span class="nb">mkdir </span>config/sentinel
+<span class="nv">$ </span><span class="nb">chmod</span> <span class="nt">-R</span> 0777 config/
+<span class="nv">$ </span>python3 docker-compose-gen.py <span class="o">{</span>number of masters<span class="o">}</span> <span class="o">{</span>number of sentinels<span class="o">}</span>
+<span class="nv">$ </span>docker compose up <span class="nt">--remove-orphans</span>
+</code></pre></div></div>
+
+<h2 id="why-give-full-access-to-the-config-folder-"><strong>Why give full access to the “config/” folder?</strong> 🤔</h2>
+
+<p>We did so because corresponding Redis sentinel instances will be creating temporary configs and updating the existing configurations. To ensure that works smoothly, you need to give full permission to this directory before mounting it to the sentinel’s container’s volumes.</p>
+
+<h1 id="results">Results</h1>
+
+<p>I won’t be going deep into what the Redis sentinel’s configurations mean in this blog post, the <a href="https://redis.io/docs/management/sentinel/#a-quick-tutorial">tutorial</a>[2] in their documentation explains the values well.</p>
+
+<h2 id="docker-resource-provisioning">Docker resource provisioning</h2>
+
+<p>I wanted to simulate a scenario where each sentinel server has 2 vCPUs and 8 GiB memory to work with, but since I have only an M1 and want to scale the setup to <strong>~50 master-replica instances + 3 sentinels</strong>, I decided to provision my <a href="https://github.com/abiosoft/colima"><em>colima</em></a>[3] with <strong>6 CPU cores and 10 GiB</strong> memory.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*oVpii3DYF8CVhmsJcRqGfA.png" alt="Colima configuration" /></p>
+
+<h2 id="verifying-if-all-sentinels-are-monitoring-a-master-️️">Verifying if all sentinels are monitoring a master 🕵️‍♂️</h2>
+
+<p>After creating a configuration with 50 master replicas and 3 Redis sentinels, we can verify if a sentinel process (let’s call it sentinel-1) has registered that other sentinels too are monitoring this master (in this example, it’ll be <code class="language-plaintext highlighter-rouge">mymaster-1</code> ).</p>
+
+<h3 id="1-verifying-via-logs">1. Verifying via logs</h3>
+
+<p>If you notice the logs of your other 2 sentinel processes, you’ll notice a <code class="language-plaintext highlighter-rouge">+sentinel</code> event against <code class="language-plaintext highlighter-rouge">mymaster-1</code> .</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*vQqxrCOEt0_9sOWqZGZ8Uw.png" alt="Logs of sentinel process" /></p>
+
+<p>These <code class="language-plaintext highlighter-rouge">+sentinel</code> events show that the particular redis-sentinel has registered a peer sentinel process <code class="language-plaintext highlighter-rouge">4ef980b...</code> running on <code class="language-plaintext highlighter-rouge">172.18.0.101:5000</code> is also monitoring <code class="language-plaintext highlighter-rouge">mymaster-1</code> which is running on <code class="language-plaintext highlighter-rouge">172.18.0.26:6379</code> .</p>
+
+<h3 id="2-verifying-by-checking-the-configuration-file">2. Verifying by checking the configuration file</h3>
+
+<p>If you head into <code class="language-plaintext highlighter-rouge">config/sentinel/sentinel-1.conf</code> , and search for <code class="language-plaintext highlighter-rouge">mymaster-1</code> , you’ll notice the following</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*XGz49ul7y6try7rXoXOtjw.png" alt="sentinel-1.conf" /></p>
+
+<p>This sentinel process has registered the other 2 sentinel processes and set that with <code class="language-plaintext highlighter-rouge">known-sentinel</code> .</p>
+
+<h3 id="3-verifying-via-redis-cli">3. Verifying via redis-cli</h3>
+
+<p>You could verify the same by running the command <code class="language-plaintext highlighter-rouge">sentinel sentinels mymaster-1</code> in Redis cli of a sentinel server.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gBT2jtgNgnmGNgQ86D1Pmw.png" alt="sentinel sentinels mymaster-1" /></p>
+
+<h1 id="testing-failovers-">Testing failovers 🔥</h1>
+
+<p>To test failovers and see the automatic replica to master upgrade in action, you could do one of the following to any master instance.</p>
+
+<ol>
+  <li>Run the following command to put the master instance to sleep for some time:
+<code class="language-plaintext highlighter-rouge">$ redis-cli -p 6379 DEBUG sleep 30</code></li>
+  <li>Or, you could simply kill a docker container:
+<code class="language-plaintext highlighter-rouge">$ docker kill redis-master-10</code></li>
+</ol>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gGg220AKSIB7ZynY6F8heQ.png" alt="Failover logs of redis-sentinel" /></p>
+
+<p>I killed a docker container and let’s dive deeper into the events of what exactly happened from the sentinel POV.</p>
+
+<ol>
+  <li>Each sentinel process emitted a <strong><em>+sdown master mymaster-10 172.18.0.9 6379</em></strong> event, signifying that they have detected that <code class="language-plaintext highlighter-rouge">mymaster-10</code> is no longer reachable.</li>
+  <li>The <strong><em>+sdown</em></strong> event got escalated to <strong><em>+odown</em> with quorom of 2/2<em>,</em></strong> means at least 2 sentinels agree that this master is no longer reachable, so a failover can begin now.</li>
+  <li>An election occurs for determining which sentinel process will perform this failover, in this election, <strong><em>redis-sentinel-3 (24911173b3ca868e5eb71cbfbda725d310629e26)</em></strong> won (you can verify which sentinel is which by checking <code class="language-plaintext highlighter-rouge">myid</code> from their config or check for <code class="language-plaintext highlighter-rouge">+elected-leader</code> being emitted from their logs).</li>
+</ol>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*REYlxtyAguwnJ4izYMluqA.png" alt="sentinel elections" /></p>
+
+<ol>
+  <li>This sentinel process performs a failover right away and <code class="language-plaintext highlighter-rouge">redis-slave-10</code> assumes the master role.</li>
+</ol>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*9IAWIhbtjQMKhjSKDM2b2g.png" alt="redis-sentinel-3 performing a failover" /></p>
+
+<p>I tried failing over multiple masters at the same time and that went smooth as butter 😮, looks like 10 is definitely not the upper limit of masters which a sentinel group can monitor.</p>
+
+<h1 id="conclusion-">Conclusion ✅</h1>
+
+<p>We come to the conclusion that a small group of 3 Redis sentinels can easily monitor and perform failover on ~50 master-replica instances with ease if the entire setup is provisioned with 6 CPU cores and 10 GiB memory and don’t trust AI so easily without performing small experiments yourself 😛</p>
+
+<p>Until next time! 👋</p>
+
+<h1 id="resources-">Resources 🔗</h1>
+
+<ul>
+  <li>[1] <a href="https://redis.io/docs/management/sentinel/">Redis sentinel documentation</a></li>
+  <li>[2] <a href="https://redis.io/docs/management/sentinel/#a-quick-tutorial">Sentinel official tutorial</a></li>
+  <li>[3] <a href="https://github.com/abiosoft/colima">Github: abisoft/colima</a></li>
+</ul>
+
+  </div><a class="u-url" href="/2023/06/23/pushing-redis-sentinels-to-their-limit.html" hidden></a>
+</article>
+
+    </div>
+  </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col">
+        <p class="feed-subscribe">
+          <a href="/feed.xml">
+            <svg class="svg-icon orange">
+              <use xlink:href="/assets/minima-social-icons.svg#rss"></use>
+            </svg><span>Subscribe</span>
+          </a>
+        </p>
+        <ul class="contact-list">
+          <li class="p-name">Uddeshya Singh</li>
+          <li><a class="u-email" href="mailto:singhuddeshyaofficial@gmail.com">singhuddeshyaofficial@gmail.com</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p>My technical ramblings, long and short.
+</p>
+      </div>
+    </div>
+
+    <div class="social-links"><ul class="social-media-list"><li>
+  <a rel="me" href="https://github.com/uds5501" target="_blank" title="github">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#github"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://twitter.com/uds5501" target="_blank" title="twitter">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#twitter"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://www.linkedin.com/in/singhuddeshya5501/" target="_blank" title="linkedin">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#linkedin"></use>
+    </svg>
+  </a>
+</li>
+</ul>
+</div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
+
+<script type="text/javascript">
+  MathJax = {
+      tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      }
+  };
+</script>
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>

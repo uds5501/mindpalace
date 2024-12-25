@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang=" en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Mathematical Intuition of Phi φ Accrual Failure Detection | Uddeshya’s Musings</title>
+<meta name="generator" content="Jekyll v4.3.4" />
+<meta property="og:title" content="Mathematical Intuition of Phi φ Accrual Failure Detection" />
+<meta name="author" content="Uddeshya Singh" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="This post is migrated version of the one already published on Medium." />
+<meta property="og:description" content="This post is migrated version of the one already published on Medium." />
+<meta property="og:site_name" content="Uddeshya’s Musings" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2024-04-24T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Mathematical Intuition of Phi φ Accrual Failure Detection" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"Uddeshya Singh"},"dateModified":"2024-04-24T00:00:00+00:00","datePublished":"2024-04-24T00:00:00+00:00","description":"This post is migrated version of the one already published on Medium.","headline":"Mathematical Intuition of Phi φ Accrual Failure Detection","mainEntityOfPage":{"@type":"WebPage","@id":"/2024/04/24/mathematical-intuition-of-phi-accrual-failure-detection.html"},"url":"/2024/04/24/mathematical-intuition-of-phi-accrual-failure-detection.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="/feed.xml" title="Uddeshya&apos;s Musings" />
+</head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Uddeshya&#39;s Musings</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Mathematical Intuition of Phi φ Accrual Failure Detection</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2024-04-24T00:00:00+00:00" itemprop="datePublished">
+        Apr 24, 2024
+      </time><div class="post-tags"><a href="/tags/#distributed-systems" class="post-tag">#distributed-systems</a><a href="/tags/#statistics" class="post-tag">#statistics</a><a href="/tags/#failure-detection" class="post-tag">#failure-detection</a></div></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>This post is migrated version of the one already published on <a href="https://singhuddeshyaofficial.medium.com/mathematical-intuition-of-phi-%CF%86-accrual-failure-detection-111d9c898011" title="@embed">Medium</a>.</p>
+
+<p>In 2004, Naohiro Hayashibara [Et. al] released <a href="https://www.researchgate.net/publication/29682135_The_ph_accrual_failure_detector">Phi Accrual Failure Detection paper</a>. This post will elaborate on the goals of this detector, the design, and underlying mathematical principles to understand this beautiful yet simple algorithm!</p>
+
+<h1 id="introduction">Introduction</h1>
+
+<p><strong>Before the maths, let’s understand why we even need accrual detectors.</strong></p>
+
+<p>Imagine you have a distributed system with a master process monitoring a bunch of worker processors (imagine master &lt;&gt; slave replica setups in your common databases). For the master node to know that the slave is still up and running and can be allocated tasks, it needs to know if the slave is even up and running or not.</p>
+
+<p>If you have been playing with any distributed system, it’s natural to imagine that heartbeats fit the bill for this use case. In <strong>Sections II C and D</strong> the authors touch base on <strong>heartbeat</strong> &amp; <strong>adaptive</strong> <strong>detectors</strong> (which utilize heartbeats internally!).</p>
+
+<blockquote>
+  <p>The underlying issue for both of these detectors is their incapability to handle scenarios where let’s say your heartbeat timeout is configured to be 1000ms and the worker fails to give any response before 1005ms. <strong>The detectors would assume the slave to be down which is actually up and running</strong>.</p>
+</blockquote>
+
+<p>These detectors answer in a binary (0/1) fashion, leaving no room for ambiguity. Either system is up or it is not, there’s nothing in between. This is where your accrual detectors shine by providing the <strong>probability of the system being down.</strong></p>
+
+<p>By the way, if you’re here to play around with this detector, I would recommend you to check out my rust implementation for the same with the provided <a href="https://github.com/uds5501/Phi-Accrual-Detector">source code</a> or the create if you want to use it in your project <a href="https://crates.io/crates/phi-accrual-detector" title="@embed">crates/phi-accrual-detector</a></p>
+
+<h1 id="uncovering-the-magic-of-probability">Uncovering the magic of probability</h1>
+
+<p>The probability of whether the system is down or not can be termed <strong>suspicion $(\phi)$</strong> which is dependent on the <strong>probability of whether the master would receive any heartbeat after the current time.</strong></p>
+
+<p>In the paper, the authors have stored the last 1000 (sample window space) intervals, the mean &amp; variance of this sample space, and the timestamp of the last heartbeat/ping received by the master. Additionally, they assume that this sample space comprising of inter-arrival time differences follows a <strong>normal distribution.</strong> With these in mind, they have mentioned the following definitions:</p>
+
+\[\begin{align*}
+\phi(t_{now}) &amp;= -\log_{10}(P_{later}(t_{now} - T_{last})) \tag{1} \\
+P_{later} &amp;= \frac{1}{\sigma\sqrt{2\pi}}\int_{t}^{+\infty}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx \tag{2} \\
+P_{later} &amp;= 1 - F(t) \tag{3} \\
+\end{align*}\]
+
+<p>Here, $F(t)$ is the cumulative distribution function of the normal distribution with mean $\mu$ and variance $\sigma^2$.</p>
+
+<p>There’s too much for stats novices (like me) to take in at once. So let’s pause. Let’s try and slowly build up our intuition how do we even get to the formula at (3) and what do these terms mean? The following subpoints will explain the relevant concepts sequentially leading up to the derivation of the above formula.</p>
+
+<h3 id="a-continuous-random-variable"><strong>[A] Continuous Random Variable</strong></h3>
+
+<p>A random variable is a variable whose value is unknown or a function that assigns a value to each experiment’s outcome. It could have a discrete value at a particular point (discrete random variable) or it could have a continuous value across a range.</p>
+
+<p>You could imagine the snowfall record of a city throughout the year as a continuous variable because, on some days the snowfall might’ve been 5ft, 3.4 ft, 0 ft, etc hence taking continuously infinite values. However, a more accurate definition of a continuous random variable would be that if any random variable could be described by a <strong>probability density function (PDF)</strong>, then it’s continuous.</p>
+
+<p>A <strong>PDF</strong> can be imagined as a function of probability for some variable <code class="language-plaintext highlighter-rouge">X</code> that is <strong>spread throughout the real line</strong> but the sum of all the probabilities across all the values <code class="language-plaintext highlighter-rouge">X</code> could take is 1. Kindly refer to the notes mentioned below to understand PDFs and continuous random variable definitions. (In the example, we have taken an exponential continuous distribution)</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*wcUVYsjgSNPVc_LC6-zzOg.png" alt="Probability Distribution Functions" /></p>
+
+<h3 id="b-cumulative-distributive-function-cdf"><strong>[B] Cumulative Distributive Function (CDF)</strong></h3>
+
+<p>This would be the easiest one to explain by far, a CDF is an expression that denotes the probability of a random variable (both continuous and discrete) to appear than a particular value(let’s say x) on the real line. More formal denotation is described in the image below:</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*irTlp6JpwNQmOcTe_m7tsw.png" alt="Cumulative Distributive Function" /></p>
+
+<h3 id="c-normal-distribution-gaussian-distributions"><strong>[C] Normal Distribution (Gaussian distributions)</strong></h3>
+
+<p>Another new term! hold on, we are so close to glory 😅.</p>
+
+<p>You must’ve seen this bell curve distribution when it comes to denoting metrics that have the majority of values centered around their mean and the probability of that value reduces as you move out further away from the mean.</p>
+
+<p>The derivation of standard normal is tricky and I believe this <a href="https://math.stackexchange.com/questions/384893/how-was-the-normal-distribution-derived">math overflow question</a> helps the best to get the intuition of its derivation. For our research paper’s derivation purpose, we’ll take it as a given that a normal distribution’s PDF will be denoted by <strong>N(mean, variance).</strong></p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*NhpGSO2hSVskNQVm_uFngA.png" alt="Normal Distributions" /></p>
+
+<h1 id="derivation">Derivation</h1>
+
+<p>With the three concepts above, we are now equipped to derive our <strong>suspicion $(\phi)$!</strong></p>
+
+<p>We will start by visualizing the sample space, let’s say for all the last 10000 incoming heartbeat intervals, you get the <strong>mean as 3 and variance as 0.04</strong>. Assuming a normal distribution, the graph would look somewhat like this:</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*Min93ZoBd6A-Xoygl6s3Wg.png" alt="Bell Curve" /></p>
+
+<p>Now, assume that your last heartbeat was received at some time 96.8s and you want to check the suspicion of the system being down at 100s (basically, 3.2s after the last ping). That just means we want to get the probability under the shaded region as shown in the picture below.</p>
+
+<p><img src="https://miro.medium.com/v2/resize:fit:2000/format:webp/1*CPDMhNtN9A5jTgAOfFUQrA.png" alt="Visualizing the probability" /></p>
+
+<p>Using this intuition, we’ll now redefine phi step by step as mentioned below</p>
+
+\[\begin{align}
+\phi(t_{now}) &amp;= -\log_{10}(P_{later}(t_{now} - T_{last}))  \\
+&amp;= -\log_{10}(P_{later}(t_{\Delta})) \text{ where } t_{\Delta} = (t_{now} - T_{last}) \tag{1} \\[1em]
+P(-\infty \leq t \leq \infty) &amp;= 1 \text{ [from basic PDF definition]} \tag{2} \\
+P(-\infty \leq t \leq t_{\Delta}) + P(t_{\Delta} \leq t \leq \infty) &amp;= 1 \text{ [additive property]} \tag{3} \\
+F(t_{\Delta}) + P(t_{\Delta} \leq t \leq \infty) &amp;= 1 \text{ [CDF definition]} \tag{4} \\
+P(t_{\Delta} \leq t \leq \infty) &amp;= 1 - F(t_{\Delta}) \tag{5} \\
+P_{later}(t) &amp;= 1 - F(t_{\Delta}) \tag{6} \\[1em]
+F(t_{\Delta}) &amp;= P(-\infty \leq t \leq t_{\Delta}) \\
+&amp;= \frac{1}{\sigma\sqrt{2\pi}}\int_{-\infty}^{t_{\Delta}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx \tag{7} \\[1em]
+\phi(t_{now}) &amp;= -\log_{10}(P_{later}(t_{\Delta})) \\
+&amp;= -\log_{10}(1 - \frac{1}{\sigma\sqrt{2\pi}}\int_{-\infty}^{t_{\Delta}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx) \tag{8} \\
+&amp;= -\log_{10}(\frac{1}{\sigma\sqrt{2\pi}}\int_{t_{\Delta}}^{\infty}e^{-\frac{(x-\mu)^2}{2\sigma^2}}dx)
+\end{align}\]
+
+<p>(1) is the basic definition of suspicion while (2) is derived from the definitions of PDF that the sum of all probabilities across the real line for the variable should be 1. Additionally, we can break the entire real line from (-inf, inf) to (-int, t) + (t, inf) as shown in (3).</p>
+
+<p>Great, now remember we defined P(x ≤ t) as a Cumulative distributive function? Let’s leverage that in (4). Steps (5) and (6) are basic algebra. In step (7), we’ll just expand the CDF using the PDF of this normal distribution and plug it in (8). Tada! your implementation can choose whatever flavor it wants out of the two mentioned in the end 😄</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>By this blog, I hope you achieved a better grasp of random variables and how to decipher basic mathematical derivations in the failure detector research papers (and hopefully others).</p>
+
+<p>If you wish to go deeper into detail regarding how to choose the suspicion value to take action on, what’s an ideal detector, and so on, I’d recommend skimming through the paper, it’s an amazing read in itself.</p>
+
+<h1 id="references">References:</h1>
+
+<ul>
+  <li>[1] <a href="https://www.youtube.com/watch?v=eXf2Zak-s0o&amp;list=PLUl4u3cNGP60hI9ATjSFgLZpbNJ7myAg6&amp;index=80">MIT Courseware L8 onwards</a></li>
+  <li>[2] <a href="https://math.stackexchange.com/a/385427">Deriving normal distribution</a></li>
+  <li>[3] <a href="https://www.researchgate.net/publication/29682135_The_ph_accrual_failure_detector">The Phi Accrual Failure</a></li>
+</ul>
+
+  </div><a class="u-url" href="/2024/04/24/mathematical-intuition-of-phi-accrual-failure-detection.html" hidden></a>
+</article>
+
+    </div>
+  </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col">
+        <p class="feed-subscribe">
+          <a href="/feed.xml">
+            <svg class="svg-icon orange">
+              <use xlink:href="/assets/minima-social-icons.svg#rss"></use>
+            </svg><span>Subscribe</span>
+          </a>
+        </p>
+        <ul class="contact-list">
+          <li class="p-name">Uddeshya Singh</li>
+          <li><a class="u-email" href="mailto:singhuddeshyaofficial@gmail.com">singhuddeshyaofficial@gmail.com</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p>My technical ramblings, long and short.
+</p>
+      </div>
+    </div>
+
+    <div class="social-links"><ul class="social-media-list"><li>
+  <a rel="me" href="https://github.com/uds5501" target="_blank" title="github">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#github"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://twitter.com/uds5501" target="_blank" title="twitter">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#twitter"></use>
+    </svg>
+  </a>
+</li>
+<li>
+  <a rel="me" href="https://www.linkedin.com/in/singhuddeshya5501/" target="_blank" title="linkedin">
+    <svg class="svg-icon grey">
+      <use xlink:href="/assets/minima-social-icons.svg#linkedin"></use>
+    </svg>
+  </a>
+</li>
+</ul>
+</div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
+
+<script type="text/javascript">
+  MathJax = {
+      tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      }
+  };
+</script>
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>
