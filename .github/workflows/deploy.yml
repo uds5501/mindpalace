@@ -25,9 +25,11 @@ jobs:
     - name: Install Dependencies
       run: bundle install
 
-    # 4. Build the Jekyll site
+    # 4. Build the Jekyll site with debugging
     - name: Build Jekyll Site
-      run: bundle exec jekyll build
+      run: |
+        bundle exec jekyll build --trace --verbose
+        ls -al _site  # List contents of the _site directory
 
     # 5. Deploy built site to master
     - name: Deploy Built Site
