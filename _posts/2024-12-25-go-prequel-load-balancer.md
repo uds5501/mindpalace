@@ -54,15 +54,13 @@ A server $s$ is **hot** if the distribtuion of RIF follows $ RIF_\text{s} \geq Q
 
 # Probe health at client level
 - A probe may be **too old**, **too overused** or **simply depleted** to be used for the server estimation. 
-- To ensure we have staved off some probes without increasing $r_{probe}$, we extend the life of a probe by reusing up to $b_{reuse}$ time where $b_{reuse}$ is calculated via - 
+- To ensure we have staved off some probes without increasing $r_{probe}$, we extend the life of a probe by reusing up to $b_{reuse}$ time where $b_{reuse}$ is calculated via (where $\delta > 0$, $m$ is the max probe pool size and $n$ is number of servers) - 
 
-$$
-\begin{align*}
-b_{\text{reuse}} &= \max \left( 1, \frac{1 + \delta}{\left(1 - \frac{m}{n}\right) \cdot r_{\text{probe}} - r_{\text{remove}}} \right) \\
-\text{where } & \delta > 0, \ m \text{ is the max probe pool size, and } n \text{ is the number of servers.}
-\end{align*}
-$$
+<div class="math-container">
 
+$$ b_{\text{reuse}} = \max \left( 1, \frac{1 + \delta}{\left(1 - \frac{m}{n}\right) \cdot r_{\text{probe}} - r_{\text{remove}}} \right) $$
+
+</div>
 - Additionally, there should be a time limit for the probes to be reused. In my implementation, that's configurable.
 - Apart from the problems above, there's an interesting case of **degradation**, how does that occur?
   - If the client keeps picking up probes which have light load (as **it should**), then we would keep removing these probes after some reuse, and whatever’s left will be probes of server with heavy loads.

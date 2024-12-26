@@ -84,3 +84,9 @@ code {
         font-size: 0.8em;
     }
 }
+
+.math-container {
+  overflow-x: auto; // Allow horizontal scrolling
+  overflow-y: hidden; // Hide vertical scrollbar
+  max-width: 100%; // Ensure it doesn't overflow the container
+}
