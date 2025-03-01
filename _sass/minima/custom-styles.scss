@@ -90,3 +90,11 @@ code {
   overflow-y: hidden; // Hide vertical scrollbar
   max-width: 100%; // Ensure it doesn't overflow the container
 }
+
+.responsive-iframe {
+  width: 500px;
+  height: 500px;
+  border: none;
+  display: block;
+  margin: 0 auto; // Center the iframe
+}
