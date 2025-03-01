@@ -59,7 +59,7 @@ Port the entire project to WASM and WebGL. The project was already in C++ and Op
 the right libraries and tools to port it to the web.
 Thankfully, LLM is your friend in conversions while [emscripten](https://emscripten.org/docs/) is the tool for this job.
 
-The Iframe below is the demo of the project build specifically for web.
+The Iframe below is the demo of the project build specifically for web. (**Note, give it sometime, it will take a few seconds to move away from a brown screen to the actual scene**).
 
 ## 🎮 Camera Controls
 
