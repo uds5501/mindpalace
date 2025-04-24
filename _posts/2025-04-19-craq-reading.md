@@ -26,7 +26,7 @@ In the end, it's just a key value storage technique, and the interface is as fol
 write(objectId, value)
 value <-- read(objectId)
 ```
-![classic-chain-replication.png](../assets/images/posts/2025-04-19-craq-reading/classic-chain-replication.png)
+![classic-chain-replication.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/classic-chain-replication.png)
 
 Each node maintains multiple version of a key. A key when newly written is **dirty** in the node. This new value is then sent to the downstream node to be written. 
 (Imagine a doubly linked list). When the write reaches the tail the following happens:
@@ -42,7 +42,7 @@ CRAQ is an improvement in the read-throughput context. With CRAQ, the clients ca
 Naturally, this raises the concern for consistency. Whether the read from the intermediate node is consistent with the current state of acknowledged writes or not.
 
 Let's take a situation where the client is trying to read "**K1**" from the intermediate node.
-![read-intermediate.png](../assets/images/posts/2025-04-19-craq-reading/read-intermediate-query.png)
+![read-intermediate.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/read-intermediate-query.png)
 
 1. The node first sees how many versions of the key are present in the node, **if it were only 1 version present and the node cleans up all the dirty versions upon receiving an ack**, it's implicitly clean, and it could be returned right away. 
    1. In our scenario however, there's a dirty version present, so the choice is between the key at **t0** and **t4**.
@@ -58,7 +58,7 @@ This flavor is the <ins>Strong Consistency</ins> model. Referring to the paper, 
   - This setup might lead to an interesting situation, let's say if the **entire chain is active** and reachable. In this scenario, the dirty value being served _might be_ newer than the committed value.
   - However, **if the chain is partitioned**, then the value being returned _might be_ older than the committed value. This is because the chain might have now maintained an updated value, but this particular node being out of the chain, will maintain an older version of the key. (illustrated below) 
 
-![older-commit.png](../assets/images/posts/2025-04-19-craq-reading/partitioned-node.png)
+![older-commit.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/partitioned-node.png)
 
 ## Is CRAQ self-sufficient?
 To better re-phrase the question, could we just keep the nodes in a chain and let them manage themselves? I will refer to this small excerpt from MIT's 6.824 course (Lecture 9)
@@ -73,7 +73,7 @@ To answer this question, let's understand what other nodes does an individual no
 Let's try breaking it shall we?
 
 ### What happens when the connection between Head and Node 1 is broken?
-![partition.png](../assets/images/posts/2025-04-19-craq-reading/partition.png)
+![partition.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/partition.png)
 
 There could be a couple of scenarios brewing up here:
 1. The head keeps attempting to send the writes to Node 1, but it never receives an ack. 
