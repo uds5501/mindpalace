@@ -15,7 +15,7 @@ So, why bother going through the paper [CRAQ - Chain replication with Apportione
 
 ## Broad strokes
 From the first looks at the paper, CRAQ is an improvement over [classic chain replication](https://www.cs.cornell.edu/home/rvr/papers/OSDI04.pdf), a method for replicating data across
-multiple nodes.
+multiple nodes. In the classic chain replication, these are the node responsibilities:
 - The head shall handle all the writes.
 - The tail shall handle all the reads.
 
@@ -26,17 +26,28 @@ In the end, it's just a key value storage technique, and the interface is as fol
 write(objectId, value)
 value <-- read(objectId)
 ```
-![classic-chain-replication.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/classic-chain-replication.png)
-
 Each node maintains multiple version of a key. A key when newly written is **dirty** in the node. This new value is then sent to the downstream node to be written. 
 (Imagine a doubly linked list). When the write reaches the tail the following happens:
 - The tail stores the updated key value as **clean**.
 - The tail sends the acknowledgement back to the upstream node.
 - The tail cleans up older versions of the key.
 - The same happens for the upstream node.
-
 It's understandable that the throughput of this setup is limited by the **slowest node in the chain**.
 
+An example of this propagation of write is shown below:
+
+![propogation.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/propogation.png)
+1. The head receives a write request for **K1** (value V1). It's stored as dirty in the head.
+2. It's then sent to the next node (Node 1) and stored as dirty there.
+3. The node 1 sends the write to the tail and the tail stores it as clean, while initiating a back-propagation of the write to the previous node (Node 1).
+4. The tail sends an ack to Node 1, and Node 1 stores the value as clean.
+5. Node 1 sends an ack to the head, and the head stores the value as clean.
+Note - In actual implementations, once the ack is received, the nodes clean up the dirty versions of the key (ex: t1 and t0 versions in Node 1 and Head).
+
+With this in mind, it should be plausible to notice how this state might come across
+![classic-chain-replication.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/classic-chain-replication.png)
+To reach this, the writes for K1, K2 have to be completely acked through the chain at t0 and t1. The K3:V3 version might be stuck at 3rd Node and have yet to send the write to the tail, hence the dirty state.
+The updated value K1:V1_1 has also not reached tail yet, as for the k4:V4, it's not yet being written to the third node. 
 ## Enter, CRAQ
 CRAQ is an improvement in the read-throughput context. With CRAQ, the clients can now be routed to read from other nodes in the chain, not only the tail.
 Naturally, this raises the concern for consistency. Whether the read from the intermediate node is consistent with the current state of acknowledged writes or not.
@@ -53,7 +64,7 @@ Let's take a situation where the client is trying to read "**K1**" from the inte
 
 This flavor is the <ins>Strong Consistency</ins> model. Referring to the paper, there are a couple more flavors of consistency that CRAQ supports:
 - <ins>Eventual Consistency</ins>: It'll allow the node to return the latest value known to it for a key. However, it means that if the client decides to read the same key from a different node, it might get an older version.
-  - PS: If the clients attempt to read from the same node, it'll have **monotonic read consistency**.
+  - PS: If the clients attempt to read from the same node, it'll have **monotonic read consistency**, i.e. the client will always get the same or the latest version of key, not an older version.
 - <ins>Eventual Consistency with Maximum Bounded Inconsistency</ins>: A node could serve uncommitted values but only till a certain version.
   - This setup might lead to an interesting situation, let's say if the **entire chain is active** and reachable. In this scenario, the dirty value being served _might be_ newer than the committed value.
   - However, **if the chain is partitioned**, then the value being returned _might be_ older than the committed value. This is because the chain might have now maintained an updated value, but this particular node being out of the chain, will maintain an older version of the key. (illustrated below) 
@@ -83,6 +94,9 @@ There could be a couple of scenarios brewing up here:
 
 So it's not really self-sufficient, is it? It requires an external entity to maintain the topology and roles of the nodes in the chain.
 The paper suggests **Zookeeper** to handle the topology. The video suggests **Raft** or **Paxos** can do the trick as well.
+What they'll do is that they will maintain the topology of the nodes and their roles. Each node can subscribe to these entities to get the latest topology and accordingly send the writes / send the acks to the right nodes.
+
+So, even if the writes / back props are failing in the event of partitions, the node will be expected to keep retrying until the zookeeper sends a change in topology notification, hence avoiding split-brain scenarios.
 
 ### If we need to use Raft anyway, why use CRAQ at all?
 1. CRAQ is a **read-optimized** solution, and it does not require the leader to be involved in the reads.
