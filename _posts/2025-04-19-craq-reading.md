@@ -12,26 +12,31 @@ In my opinion, it's a pretty neat piece of work, and it mentioned that "Manageme
 In this context, 3FS uses CRAQ, and the author has explained it in great detail later down the blog.
 So, why bother going through the paper [CRAQ - Chain replication with Apportioned Queries](https://pdos.csail.mit.edu/6.824/papers/craq.pdf)? For fun, of course!
 
-
 ## Broad strokes
-From the first looks at the paper, CRAQ is an improvement over [classic chain replication](https://www.cs.cornell.edu/home/rvr/papers/OSDI04.pdf), a method for replicating data across
-multiple nodes. In the classic chain replication, these are the node responsibilities:
-- The head shall handle all the writes.
-- The tail shall handle all the reads.
 
-In the end, it's just a key value storage technique, and the interface is as follows -
+The intent is to implement a Key-Value (or an Key-Object store as per the CRAQ paper) with the interface -
 ### Interface
 
 ```go
 write(objectId, value)
 value <-- read(objectId)
 ```
+The system replicates data across multiple nodes and CRAQ is an improvement over [classic chain replication](https://www.cs.cornell.edu/home/rvr/papers/OSDI04.pdf), a method for replicating data across
+multiple nodes.
+
+The nodes are chained as in a linked list, with a Head node and a Tail.
+
+In classic chain replication, these are the node responsibilities:
+- The head shall handle all the writes.
+- The tail shall handle all the reads.
+
 Each node maintains multiple version of a key. A key when newly written is **dirty** in the node. This new value is then sent to the downstream node to be written. 
 (Imagine a doubly linked list). When the write reaches the tail the following happens:
 - The tail stores the updated key value as **clean**.
 - The tail sends the acknowledgement back to the upstream node.
 - The tail cleans up older versions of the key.
 - The same happens for the upstream node.
+
 It's understandable that the throughput of this setup is limited by the **slowest node in the chain**.
 
 An example of this propagation of write is shown below:
@@ -48,8 +53,9 @@ With this in mind, it should be plausible to notice how this state might come ac
 ![classic-chain-replication.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/classic-chain-replication.png)
 To reach this, the writes for K1, K2 have to be completely acked through the chain at t0 and t1. The K3:V3 version might be stuck at 3rd Node and have yet to send the write to the tail, hence the dirty state.
 The updated value K1:V1_1 has also not reached tail yet, as for the k4:V4, it's not yet being written to the third node. 
+
 ## Enter, CRAQ
-CRAQ is an improvement in the read-throughput context. With CRAQ, the clients can now be routed to read from other nodes in the chain, not only the tail.
+CRAQ is an improvement in the **read-throughput context**. With CRAQ, the clients can now be routed to read from other nodes in the chain, not only the tail.
 Naturally, this raises the concern for consistency. Whether the read from the intermediate node is consistent with the current state of acknowledged writes or not.
 
 Let's take a situation where the client is trying to read "**K1**" from the intermediate node.
@@ -72,11 +78,11 @@ This flavor is the <ins>Strong Consistency</ins> model. Referring to the paper, 
 ![older-commit.png]({{site.baseurl}}/assets/images/posts/2025-04-19-craq-reading/partitioned-node.png)
 
 ## Is CRAQ self-sufficient?
-To better re-phrase the question, could we just keep the nodes in a chain and let them manage themselves? I will refer to this small excerpt from MIT's 6.824 course (Lecture 9)
+To better re-phrase the question, could we just keep the nodes in a chain and let them manage the roles of each node in the chain and the chain sequence themselves? I will refer to this small excerpt from MIT's 6.824 course (Lecture 9)
 
 <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/IXHzbCuADt0?si=ASnXkvxXHQXjfKrg&amp;start=4300" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
-To answer this question, let's understand what other nodes does an individual node needs to be in contact with. Imagine a doubly linked list for better visualization.
+To answer this question, let's understand what other nodes does an individual node needs to be in contact with. Imagine a doubly linked list for a better visualization.
 1. **Next node** (unless this node is the Tail)
 2. **Previous node** (unless this node is the Head)
 3. **Tail node** (in the event it's the strong consistency setup).
@@ -88,13 +94,13 @@ Let's try breaking it shall we?
 
 There could be a couple of scenarios brewing up here:
 1. The head keeps attempting to send the writes to Node 1, but it never receives an ack. 
-   - The head might think that Node 1 is down and start sending the writes to Node 2 instead. (how would it know where's Node 2? _PS: Ironically, in solutions later, each node stores th entire chain topology anyway_)
+   - The head might think that Node 1 is down and start sending the writes to Node 2 instead. (how would it know where's Node 2? _PS: Ironically, in solutions later, each node stores the entire chain topology anyway and not just the neighbouring nodes in the chain_)
 2. Node 1 might think that the head is down and promote itself to be the new head. 
    - This is a **split-brain** scenario, and the node 1 might be accepting writes while the head is still trying to send writes to it.
 
-So it's not really self-sufficient, is it? It requires an external entity to maintain the topology and roles of the nodes in the chain.
+So it's not really self-sufficient, is it? It requires an external entity, or being specific, a configuration management entity to maintain the topology and roles of the nodes in the chain.
 The paper suggests **Zookeeper** to handle the topology. The video suggests **Raft** or **Paxos** can do the trick as well.
-What they'll do is that they will maintain the topology of the nodes and their roles. Each node can subscribe to these entities to get the latest topology and accordingly send the writes / send the acks to the right nodes.
+What they'll do is that they will maintain the topology of the nodes and their roles. Each node should subscribe to these management entities to get the latest topology and accordingly send the writes / send the acks to the right nodes.
 
 So, even if the writes / back props are failing in the event of partitions, the node will be expected to keep retrying until the zookeeper sends a change in topology notification, hence avoiding split-brain scenarios.
 
