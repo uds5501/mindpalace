@@ -121,3 +121,6 @@ CRAQ shines in the event when something might go wrong during the failure recove
 
 ## Conclusion
 CRAQ is fun, I skipped the paper's elaboration regarding the performance evaluation and features like mini-transactions, appending to the key type transactions are well elaborated within the paper, there's nothing more I could add to it.
+
+## Acknowledgements
+Big thanks to [Govind](https://x.com/DeepknowledgeU) and [Debadree](https://x.com/DebadreeC) for taking out time to review the draft of this post!
