@@ -7,9 +7,9 @@ permalink: /about/
 
 Hey, thanks for stopping by!
 
-I am Uddeshya Singh, Senior Software Engineer at [Gojek](https://gojek.com). In my 9-5, I work on building and maintaining resilient distributed systems to handle payments traffic at citizen scale. 
+I am Uddeshya Singh, Senior Software Engineer in RnD team at [Imply Data](https://imply.io/), primarily working on improving OSS Druid. You can find my work done so far here - [Uddeshya's commits](https://github.com/apache/druid/pulls?q=is%3Apr+author%3Auds5501+is%3Aclosed).
 
-In my 5-9, my interests varies between distributed systems, systems engineering and algorithms in geek side. I write about those rabbit-hole explorations here. You can find my older writings at my [medium page](https://medium.com/@singhuddeshyaofficial).
+My interests varies between distributed systems, systems engineering and algorithms in geek side. I write about those rabbit-hole explorations here. You can find my older writings at my [medium page](https://medium.com/@singhuddeshyaofficial).
 
 Outside of work, I am a football fan and up for a good walk/run in the park.
 
