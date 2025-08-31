@@ -25,7 +25,7 @@ For the rest of this post, I will be diving deep into the constructs of a
 |------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | TaskToolbox      | Small utility class that helps in task's functions. A toolbox may have different dependencies injected to it depending on which env did the task runner spawn in.                                                                                                                                                             |
 
-### SeekableStreamIndexTaskRunner internals
+### Uncovering the SeekableStreamIndex TaskRunner
 
 Each `SeekableStreamIndexTaskRunner` is instantiated with a `TaskToolbox` and a
 `SeekableStreamIndexTask` object. The toolbox internally contains tons of utility classes, however I'd like you to focus on the following ones for now:
@@ -39,12 +39,12 @@ Each `SeekableStreamIndexTaskRunner` is instantiated with a `TaskToolbox` and a
 -`Appenderator`: Arguably the most important class in the ingestion process. The prime responsibility of this class is to index data (in-memory and on-disk) and possibly serve queries on top of it. We'll talk more about this later.
 - `StreamAppenderatorDriver`: An abstraction on top of `Appenderator` that helps in additionally performing tasks that alone `Appenderator` can't do (notably segment handoffs to Historicals, and publishing segments to deep storage etc).
 
-These classes should be enough to get us started, I'll explain the driver and appenderator in more detail as we reach the relevant sections. Talking about the sections, I'd like to break down the further post in sections with the overall flow looking like this:
-![ingestion-loop.png]({{site.baseurl}}/assets/images/posts/2025-07-27-demistifying-druid-ingestion/run-notice-loop.png)
+These classes should be enough to get us started, I'll explain the appenderator in more detail as we reach the relevant sections. Talking about the sections, I'd like to break down the further post in sections with the overall flow looking like this:
+![ingestion-loop.png]({{site.baseurl}}/assets/images/posts/2025-08-30-demistifying-druid-ingestion-2/ingestion-loop.png)
 
 #### 1. Initialization
 
-Technically, you could include the creation of all the classes I mentioned above in this section, I'll skip it for the juicy bits. During initialization, the runner has only these bits to take care of:
+Technically, you could include the creation of all the classes I mentioned above in this section, however I'll skip it for the juicy bits. During initialization, the runner has only these bits to take care of:
 
 - The driver's `startJob()` is triggered that looks for any existing metadata in the base directory pertaining to this task. This may include loading existing segments and sinks in the memory, initiliazing relevant executors etc.
 - If any segments are found in the metadata, they are loaded in the `segments` list of the runner.
@@ -56,7 +56,7 @@ Technically, you could include the creation of all the classes I mentioned above
 #### 2. Ingestion Loop
 - A re-check of partition assignments is done (just in case there are changes like paritions closed off, scaled out etc).
 - If there's a shutdown requested, last sequence being read is checkpointed or the sequences to read have been set to 0 (no partition to read) runner sets the status to `PUBLISHING`, i.e., no fresh records shall be read and the task is in finishing stages.
-- Any background persists / publish failures are reported (if any, and btw, why here? [1]).
+- Any background persists / publish failures are reported (yup, we keep publishing segments incrementally).
 - If this sequence is not going to be read anymore (no more new records), this sequence is marked for publish as well.
 - The actual record reading starts now:
   - Records are fetched from the `recordSupplier` (which reads from the stream) in batches.
@@ -78,7 +78,7 @@ Before diving too deep into addition, we need to talk about **Sinks** and **Fire
 is the primary unit where the row addition / query happens. So, in a way, you could say that a sink would eventually churn out a "**big final segment**" while the hydrants maintains temporary segments within themselves that are queryable.
 
 The following diagram might help visualize this better:
-![sinks.png]({{site.baseurl}}/assets/images/posts/2025-07-27-demistifying-druid-ingestion/sinks.png)
+![sinks.png]({{site.baseurl}}/assets/images/posts/2025-08-30-demistifying-druid-ingestion-2/sinks.png)
 
 - The Yellow boxes are the hydrants that have been persisted to disk.
 - The White one (FireHydrant_3) is a fire hydrant currently in-memory but not writable.
