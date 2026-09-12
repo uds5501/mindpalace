@@ -1,0 +1,84 @@
+{% assign primary_recipe = include.coffee.recipes | sort: 'date' | last %}
+{% assign search_terms = include.coffee.roaster | append: ' ' | append: include.coffee.title | append: ' ' | append: include.coffee.origin | append: ' ' | append: include.coffee.estate | append: ' ' | append: include.coffee.region | append: ' ' | append: include.coffee.varietal | append: ' ' | append: include.coffee.process %}
+{% if include.coffee.tasting_notes %}
+  {% assign search_terms = search_terms | append: ' ' | append: include.coffee.tasting_notes | join: ' ' %}
+{% endif %}
+<div class="coffee-card"
+     data-search="{{ search_terms | downcase | strip }}"
+     data-roast="{{ include.coffee.roast }}"
+     data-brand="{{ include.coffee.roaster | downcase | slugify }}"
+     data-notes="{% for note in include.coffee.tasting_notes %}{{ note | downcase | slugify }}{% unless forloop.last %},{% endunless %}{% endfor %}"
+     data-date="{{ include.coffee.last_brewed }}">
+  {% if include.coffee.image %}
+    <a class="coffee-card__media" href="{{ include.coffee.url | relative_url }}" aria-hidden="true" tabindex="-1">
+      <img class="coffee-card__image"
+           src="{{ include.coffee.image | relative_url }}"
+           alt="{{ include.coffee.roaster }} — {{ include.coffee.title }}"
+           loading="lazy"
+           width="160"
+           height="220">
+    </a>
+  {% endif %}
+
+  <div class="coffee-card__body">
+    <div class="coffee-card__top">
+      <span class="coffee-card__origin">
+        <span class="coffee-card__origin-code">{{ include.coffee.origin_code }}</span>
+        {{ include.coffee.origin }}
+      </span>
+    </div>
+
+    <p class="coffee-card__roaster">
+      <button type="button" class="coffee-card__brand" data-filter="brand" data-value="{{ include.coffee.roaster | downcase | slugify }}">{{ include.coffee.roaster }}</button>
+    </p>
+    <h2 class="coffee-card__name">
+      <a href="{{ include.coffee.url | relative_url }}">{{ include.coffee.title }}</a>
+    </h2>
+    {% include coffee/location.html coffee=include.coffee %}
+
+    <div class="coffee-card__tags">
+      <span class="coffee-card__tag coffee-card__tag--roast coffee-card__tag--roast-{{ include.coffee.roast }}">{{ include.coffee.roast | capitalize }} roast</span>
+      {% if include.coffee.process %}
+        <span class="coffee-card__tag coffee-card__tag--process">{{ include.coffee.process }}</span>
+      {% endif %}
+      <span class="coffee-card__tag coffee-card__tag--recipes">{{ include.coffee.recipes.size }} recipe{% if include.coffee.recipes.size != 1 %}s{% endif %}</span>
+    </div>
+
+    {% if include.coffee.tasting_notes.size > 0 %}
+      <div class="coffee-card__notes">
+        {% for note in include.coffee.tasting_notes %}
+          {% assign note_slug = note | downcase | slugify %}
+          <button type="button" class="coffee-card__note" data-filter="note" data-value="{{ note_slug }}" data-label="{{ note }}">{{ note }}</button>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if primary_recipe %}
+      <dl class="coffee-card__brew-stats">
+        <div class="coffee-card__brew-stat">
+          <dt>Method</dt>
+          <dd>{{ primary_recipe.method }}</dd>
+        </div>
+        {% if primary_recipe.grind %}
+          <div class="coffee-card__brew-stat">
+            <dt>Grind</dt>
+            <dd>{{ primary_recipe.grind }}</dd>
+          </div>
+        {% endif %}
+        {% if primary_recipe.ratio %}
+          <div class="coffee-card__brew-stat">
+            <dt>Ratio</dt>
+            <dd>{{ primary_recipe.ratio }}</dd>
+          </div>
+        {% endif %}
+      </dl>
+    {% endif %}
+
+    <footer class="coffee-card__footer">
+      {% if include.coffee.last_brewed %}
+        <time datetime="{{ include.coffee.last_brewed }}">{{ include.coffee.last_brewed | date: '%b %-d, %Y' }}</time>
+      {% endif %}
+      <a class="coffee-card__link" href="{{ include.coffee.url | relative_url }}">View recipes &rarr;</a>
+    </footer>
+  </div>
+</div>

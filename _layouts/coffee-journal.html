@@ -1,0 +1,48 @@
+---
+layout: base
+---
+<div class="coffee-journal">
+  <div class="coffee-journal__inner">
+    <a class="coffee-journal__back" href="{{ '/tech/' | relative_url }}">&larr; Tech Blog</a>
+
+    {% assign sorted_coffees = site.coffees | sort: 'last_brewed' | reverse %}
+    {% assign origin_count = site.coffees | map: 'origin' | uniq | size %}
+    {% assign brew_count = 0 %}
+    {% for coffee in site.coffees %}
+      {% assign brew_count = brew_count | plus: coffee.recipes.size %}
+    {% endfor %}
+
+    <header class="coffee-journal__header">
+      <div class="coffee-journal__header-text">
+        <p class="coffee-journal__eyebrow">Personal Brew Archive</p>
+        <h1 class="coffee-journal__title">Coffee Journal</h1>
+        <p class="coffee-journal__subtitle">
+          Dial-ins, recipes, and sensory notes from {{ origin_count }} state{% if origin_count != 1 %}s{% endif %} across {{ brew_count }} logged brew{% if brew_count != 1 %}s{% endif %}.
+        </p>
+      </div>
+      <div class="coffee-journal__stats">
+        <div class="coffee-journal__stat">
+          <span class="coffee-journal__stat-value">{{ origin_count | prepend: '0' | slice: -2, 2 }}</span>
+          <span class="coffee-journal__stat-label">States</span>
+        </div>
+        <div class="coffee-journal__stat-divider" aria-hidden="true"></div>
+        <div class="coffee-journal__stat">
+          <span class="coffee-journal__stat-value">{{ brew_count }}</span>
+          <span class="coffee-journal__stat-label">Brews logged</span>
+        </div>
+      </div>
+    </header>
+
+    {% include coffee/filters.html %}
+
+    <div class="coffee-journal__grid" id="coffee-grid">
+      {% for coffee in sorted_coffees %}
+        {% include coffee/card.html coffee=coffee %}
+      {% endfor %}
+    </div>
+
+    <p class="coffee-journal__empty" id="coffee-empty" hidden>No entries match your search or filters.</p>
+  </div>
+</div>
+
+<script src="{{ '/assets/js/coffee-journal.js' | relative_url }}" defer></script>

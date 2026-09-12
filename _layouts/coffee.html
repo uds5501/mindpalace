@@ -1,0 +1,118 @@
+---
+layout: base
+---
+<div class="coffee-journal coffee-detail">
+  <div class="coffee-journal__inner">
+    <a class="coffee-journal__back" href="{{ '/coffee/' | relative_url }}">&larr; Coffee Journal</a>
+
+    <header class="coffee-detail__header">
+      <div class="coffee-detail__hero">
+        {% if page.image %}
+          <div class="coffee-detail__image-wrap">
+            <img class="coffee-detail__image"
+                 src="{{ page.image | relative_url }}"
+                 alt="{{ page.roaster }} — {{ page.title }}"
+                 width="400"
+                 height="500">
+          </div>
+        {% endif %}
+        <div class="coffee-detail__intro">
+          <div class="coffee-detail__meta-row">
+            <span class="coffee-card__origin">
+              <span class="coffee-card__origin-code">{{ page.origin_code }}</span>
+              {{ page.origin }}
+            </span>
+          </div>
+          <p class="coffee-card__roaster">
+            <a class="coffee-card__brand" href="{{ '/coffee/' | relative_url }}?brand={{ page.roaster | downcase | slugify }}">{{ page.roaster }}</a>
+          </p>
+          <h1 class="coffee-detail__title">{{ page.title }}</h1>
+      {% include coffee/location.html page=page %}
+
+      <div class="coffee-card__tags">
+        <span class="coffee-card__tag coffee-card__tag--roast coffee-card__tag--roast-{{ page.roast }}">{{ page.roast | capitalize }} roast</span>
+        {% if page.process %}
+          <span class="coffee-card__tag coffee-card__tag--process">{{ page.process }}</span>
+        {% endif %}
+        <span class="coffee-card__tag coffee-card__tag--recipes">{{ page.recipes.size }} recipe{% if page.recipes.size != 1 %}s{% endif %}</span>
+      </div>
+
+      {% if page.tasting_notes.size > 0 %}
+        <div class="coffee-card__notes">
+          {% for note in page.tasting_notes %}
+            {% assign note_slug = note | downcase | slugify %}
+            <a class="coffee-card__note" href="{{ '/coffee/' | relative_url }}?note={{ note_slug }}">{{ note }}</a>
+          {% endfor %}
+        </div>
+      {% endif %}
+        </div>
+      </div>
+    </header>
+
+    {% if content != "" %}
+      <div class="coffee-detail__body post-content">
+        {{ content }}
+      </div>
+    {% endif %}
+
+    <section class="coffee-detail__recipes" aria-label="Brew recipes">
+      <h2 class="coffee-detail__section-title">Recipes</h2>
+      {% assign sorted_recipes = page.recipes | sort: 'date' | reverse %}
+      {% for recipe in sorted_recipes %}
+        <article class="recipe-card" id="recipe-{{ recipe.id }}">
+          <header class="recipe-card__header">
+            <h3 class="recipe-card__method">{{ recipe.method }}</h3>
+            {% if recipe.date %}
+              <time class="recipe-card__date" datetime="{{ recipe.date }}">{{ recipe.date | date: '%b %-d, %Y' }}</time>
+            {% endif %}
+          </header>
+
+          <dl class="recipe-card__specs">
+            {% if recipe.grind %}
+              <div class="recipe-card__spec">
+                <dt>Grind</dt>
+                <dd>{{ recipe.grind }}</dd>
+              </div>
+            {% endif %}
+            {% if recipe.ratio %}
+              <div class="recipe-card__spec">
+                <dt>Ratio</dt>
+                <dd>{{ recipe.ratio }}</dd>
+              </div>
+            {% endif %}
+            {% if recipe.water_temp %}
+              <div class="recipe-card__spec">
+                <dt>Water</dt>
+                <dd>{{ recipe.water_temp }}</dd>
+              </div>
+            {% endif %}
+            {% if recipe.drawdown %}
+              <div class="recipe-card__spec">
+                <dt>Draw-down</dt>
+                <dd>{{ recipe.drawdown }}</dd>
+              </div>
+            {% endif %}
+          </dl>
+
+          {% if recipe.steps.size > 0 %}
+            <div class="recipe-card__steps">
+              <h4 class="recipe-card__steps-title">Steps</h4>
+              <ol>
+                {% for step in recipe.steps %}
+                  <li>{{ step }}</li>
+                {% endfor %}
+              </ol>
+            </div>
+          {% endif %}
+
+          {% if recipe.notes %}
+            <div class="recipe-card__notes">
+              <h4 class="recipe-card__steps-title">Sensory notes</h4>
+              <p>{{ recipe.notes }}</p>
+            </div>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </section>
+  </div>
+</div>

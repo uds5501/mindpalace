@@ -34,6 +34,23 @@ html {
 
 .site-nav {
   font-size: 1.125rem;
+
+  .page-link--coffee {
+    color: $cj-accent;
+    font-weight: 500;
+
+    &:visited {
+      color: $cj-accent;
+    }
+
+    &:hover {
+      color: $link-hover-color;
+    }
+  }
+
+  .page-link--tech {
+    font-weight: 500;
+  }
 }
 
 pre,

@@ -1,1 +1,25 @@
-// Placeholder to allow overriding predefined variables smoothly.
+// Coffee journal palette — used site-wide
+$cj-canvas: #fbf9f5;
+$cj-surface: #ffffff;
+$cj-text: #1e1815;
+$cj-text-secondary: #665a53;
+$cj-accent: #c25e2e;
+$cj-border: #eadfcf;
+$cj-roast-light: #e8c4a8;
+$cj-roast-medium: #d4a574;
+$cj-roast-dark: #8b6914;
+
+$background-color: $cj-canvas;
+$code-background-color: $cj-surface;
+$text-color: $cj-text;
+$brand-color: $cj-text-secondary;
+$brand-color-dark: $cj-text-secondary;
+$brand-color-light: $cj-border;
+$site-title-color: $cj-text;
+$link-base-color: $cj-accent;
+$link-visited-color: $cj-accent;
+$link-hover-color: #a04d24;
+$border-color-01: $cj-border;
+$border-color-02: $cj-border;
+$table-zebra-color: #f5f0ea;
+$table-header-bg-color: #f5f0ea;

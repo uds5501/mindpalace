@@ -1,0 +1,52 @@
+{% assign roasters = site.coffees | map: 'roaster' | uniq | sort %}
+
+<div class="coffee-filters">
+  <div class="coffee-filters__search-row">
+    <label class="coffee-filters__search">
+      <span class="coffee-filters__label">Search journal</span>
+      <span class="coffee-filters__search-wrap">
+        <svg class="coffee-filters__search-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M11.5 10h-.79l-.28-.27A5.471 5.471 0 0 0 11 6.5 5.5 5.5 0 1 0 5.5 12c1.3 0 2.49-.45 3.43-1.2l.27.28v.79l4.25 4.25 1.5-1.5L11.5 10zm-6 0C3.57 10 2 8.43 2 6.5S3.57 3 5.5 3 9 4.57 9 6.5 7.43 10 5.5 10z" fill="currentColor"/>
+        </svg>
+        <input type="search"
+               id="coffee-search"
+               placeholder="Brand, state, estate, or varietal..."
+               autocomplete="off"
+               aria-controls="coffee-grid">
+      </span>
+    </label>
+
+    <fieldset class="coffee-filters__group">
+      <legend class="coffee-filters__label">Roast level</legend>
+      <div class="coffee-filters__chips" role="group" aria-label="Roast level">
+        <button type="button" class="coffee-filters__chip is-active" data-filter="roast" data-value="all">All</button>
+        <button type="button" class="coffee-filters__chip" data-filter="roast" data-value="light">Light</button>
+        <button type="button" class="coffee-filters__chip" data-filter="roast" data-value="medium">Medium</button>
+        <button type="button" class="coffee-filters__chip" data-filter="roast" data-value="dark">Dark</button>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="coffee-filters__brand-row">
+    <fieldset class="coffee-filters__group coffee-filters__group--brands">
+      <legend class="coffee-filters__label">Brand</legend>
+      <div class="coffee-filters__chips" role="group" aria-label="Coffee brand">
+        <button type="button" class="coffee-filters__chip is-active" data-filter="brand" data-value="all">All</button>
+        {% for roaster in roasters %}
+          {% assign roaster_slug = roaster | downcase | slugify %}
+          <button type="button" class="coffee-filters__chip" data-filter="brand" data-value="{{ roaster_slug }}">{{ roaster }}</button>
+        {% endfor %}
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="coffee-filters__note-row">
+    <fieldset class="coffee-filters__group coffee-filters__group--notes">
+      <legend class="coffee-filters__label">Flavor notes</legend>
+      <div class="coffee-filters__chips" id="coffee-note-filters" role="group" aria-label="Flavor notes">
+        <button type="button" class="coffee-filters__chip is-active" data-filter="note" data-value="all">All</button>
+      </div>
+    </fieldset>
+    <p class="coffee-filters__count" id="coffee-count" aria-live="polite"></p>
+  </div>
+</div>

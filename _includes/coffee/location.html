@@ -1,0 +1,10 @@
+{% assign subject = include.coffee | default: include.page %}
+{% if subject.estate or subject.region or subject.varietal %}
+  <p class="coffee-card__region">
+    {%- if subject.estate -%}{{ subject.estate }}{%- endif -%}
+    {%- if subject.estate and subject.region -%}<span class="coffee-card__sep">&middot;</span>{%- endif -%}
+    {%- if subject.region -%}{{ subject.region }}{%- endif -%}
+    {%- if subject.varietal and subject.estate or subject.varietal and subject.region -%}<span class="coffee-card__sep">&middot;</span>{%- endif -%}
+    {%- if subject.varietal -%}{{ subject.varietal }}{%- endif -%}
+  </p>
+{% endif %}
