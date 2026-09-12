@@ -14,13 +14,13 @@ tasting_notes:
   - Biscuit
 image: assets/images/coffee/nandan-royale-light.png
 product_url: https://www.nandancoffee.com/products/nandan-royale-light-roast
-last_brewed: 2026-09-12
+last_brewed: 2026-03-13
 recipes:
   - id: french-press-v1
     method: French Press
     water_temp: Boiled (600 ml)
     drawdown: 5 min
-    date: 2026-09-12
+    date: 2026-03-13
     steps:
       - Pour 600 ml boiled water over the grounds
       - Brew for 5 minutes, then plunge and serve
@@ -29,7 +29,7 @@ recipes:
     method: French Press
     water_temp: Boiled (600 ml)
     drawdown: 5 min
-    date: 2026-09-12
+    date: 2026-03-10
     steps:
       - Boil the water with one crushed elaichi pod and put half teaspoon of honey in it.
       - Pour 600 ml boiled water over the grounds.

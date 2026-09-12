@@ -15,13 +15,13 @@ tasting_notes:
   - Caramelized sugar
 image: assets/images/coffee/yagachi-waterfall-reserve.jpg
 product_url: https://yagachi.coffee/products/the-waterfall-reserve
-last_brewed: 2026-09-12
+last_brewed: 2026-06-26
 recipes:
   - id: french-press-v1
     method: French Press
     water_temp: Boiled (600 ml)
     drawdown: 5 min
-    date: 2026-09-12
+    date: 2026-06-26
     steps:
       - A small clove and some cinnamon in boiling kettle.
       - Pour 600 ml boiled water over the grounds

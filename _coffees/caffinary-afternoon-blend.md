@@ -17,13 +17,13 @@ tasting_notes:
   - Plum
 image: assets/images/coffee/caffinary-afternoon-blend.png
 product_url: https://caffinary.com/products/afternoon-blend
-last_brewed: 2026-09-12
+last_brewed: 2026-05-11
 recipes:
   - id: french-press-v1
     method: French Press
     water_temp: Boiled (600 ml)
     drawdown: 5 min
-    date: 2026-09-12
+    date: 2026-05-11
     steps:
       - Pour 600 ml boiled water over the grounds
       - Brew for 5 minutes, then plunge and serve

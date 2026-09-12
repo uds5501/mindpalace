@@ -15,13 +15,13 @@ tasting_notes:
   - Sugarcane
 image: assets/images/coffee/araku-selection.png
 product_url: https://www.arakucoffee.in/products/selection
-last_brewed: 2026-09-12
+last_brewed: 2025-04-26
 recipes:
   - id: french-press-v1
     method: French Press
     water_temp: Boiled (600 ml)
     drawdown: 5 min
-    date: 2025-08-25
+    date: 2025-04-26
     steps:
       - Pour 600 ml boiled water over the grounds
       - Brew for 5 minutes, then plunge and serve

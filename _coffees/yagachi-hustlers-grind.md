@@ -15,13 +15,13 @@ tasting_notes:
   - Dark chocolate
 image: assets/images/coffee/yagachi-hustlers-grind.jpg
 product_url: https://yagachi.coffee/products/the-hustler-s-grind
-last_brewed: 2026-09-12
+last_brewed: 2026-06-26
 recipes:
   - id: french-press-v1
     method: French Press
     water_temp: Boiled (600 ml)
     drawdown: 5 min
-    date: 2026-09-12
+    date: 2026-06-26
     steps:
       - Pour 600 ml boiled water over the grounds
       - Brew for 5 minutes, then plunge and serve
