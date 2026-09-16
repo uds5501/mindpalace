@@ -602,6 +602,20 @@
     font-size: 0.92rem;
     line-height: 1.55;
   }
+
+  &__result {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid $cj-border;
+
+    .jekyll-twitter-plugin {
+      margin: 0;
+    }
+
+    .twitter-tweet {
+      margin: 0 !important;
+    }
+  }
 }
 
 @media screen and (max-width: 768px) {

@@ -14,8 +14,20 @@ tasting_notes:
   - Grapes
 image: assets/images/coffee/silver-oak-cafe-blend.jpg
 product_url: https://bluetokaicoffee.com/products/silver-oak-cafe-blend
-last_brewed: 2026-09-15
+last_brewed: 2026-09-17
 recipes:
+  - id: v60-v2
+    method: V60
+    ratio: 1:16 (20g / 320 ml)
+    date: 2026-09-17
+    result: https://x.com/uds5501/status/2100086684893450643
+    steps:
+      - Weigh 20 g ground coffee into the V60
+      - P1 — pour 64 ml, rest 30 seconds
+      - P2 — pour 64 ml, rest 30 seconds
+      - P3 — pour 64 ml, rest 30 seconds
+      - P4 — pour 64 ml, rest 30 seconds
+      - P5 — pour 64 ml, rest 30 seconds, then let draw down
   - id: french-press-v1
     method: French Press
     ratio: 1:24 (25g / 600 ml)

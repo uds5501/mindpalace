@@ -111,8 +111,23 @@ layout: base
               <p>{{ recipe.notes }}</p>
             </div>
           {% endif %}
+
+          {% if recipe.result %}
+            {% include coffee/recipe-result.html url=recipe.result %}
+          {% endif %}
         </article>
       {% endfor %}
     </section>
+
+    {% assign has_recipe_results = false %}
+    {% for recipe in page.recipes %}
+      {% if recipe.result %}
+        {% assign has_recipe_results = true %}
+        {% break %}
+      {% endif %}
+    {% endfor %}
+    {% if has_recipe_results %}
+      <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+    {% endif %}
   </div>
 </div>
