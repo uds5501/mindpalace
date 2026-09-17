@@ -1,0 +1,9 @@
+{% if include.url %}
+  {% assign tweet_url = include.url | replace: 'twitter.com', 'x.com' %}
+  <div class="recipe-card__result">
+    <h4 class="recipe-card__steps-title">Result</h4>
+    <blockquote class="twitter-tweet" data-dnt="true">
+      <a href="{{ tweet_url }}"></a>
+    </blockquote>
+  </div>
+{% endif %}
