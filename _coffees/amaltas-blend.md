@@ -12,7 +12,8 @@ tasting_notes:
   - Blueberry
   - Milk chocolate
   - Fruity
-  - Solid body
+  - Citrus
+image: assets/images/coffee/amaltas-blend.jpg
 product_url: https://bluetokaicoffee.com/products/amaltas-blend
 last_brewed: 2026-09-25
 recipes:
@@ -26,4 +27,6 @@ recipes:
       - Pour 300 ml water using your usual pour-over routine
     notes: Really nice cup — solid body, wasn't sour. Clean and balanced.
 ---
+Light roast blend from Nelliyampathy and Shevaroy — washed and natural Arabica, roasted light for fruity citrus notes with blueberry and milk chocolate. Best enjoyed black. Recommended resting period: 16 days.
+
 [Sourced from Blue Tokai Coffee](https://bluetokaicoffee.com/products/amaltas-blend).
