@@ -47,6 +47,19 @@ Make the layout scannable, lightweight, and accessible with semantic HTML.
 
 ---
 
+## Coffees
+
+### Amaltas Blend
+
+| Field | Value |
+|-------|-------|
+| Name | Amaltas Blend |
+| First brewed | 2026-09-25 |
+| Methods tried | Pour over |
+| Tasting notes | Solid body, not sour, balanced |
+
+---
+
 ## Brew Log
 
 ### 2026-09-23 — Mellow Cocoffee (Pour Over)
@@ -66,3 +79,19 @@ Make the layout scannable, lightweight, and accessible with semantic HTML.
 **Tasting notes:** Nice mellow cocoffee — smooth, easy-drinking. Coconut water rounds off acidity and adds natural sweetness.
 
 **Notes:** Longer drawdown (~4 min) on a medium-fine C3s setting; dilution with coconut water keeps the cup mellow rather than sharp.
+
+### 2026-09-25 — Amaltas Blend (Pour Over)
+
+| Parameter | Value |
+|-----------|-------|
+| Coffee | Amaltas Blend |
+| Method | Pour over |
+| Grinder | Timemore Chestnut C3s |
+| Grind | 20 |
+| Dose | 20 g |
+| Water | 300 ml |
+| Ratio | 1:15 |
+
+**Tasting notes:** Really nice cup — solid body, wasn't sour. Clean and balanced.
+
+**Notes:** First brew with this coffee. Grind 20 (vs 22 on prior pour over) landed well — finer setting may have helped body without tipping into sourness.
