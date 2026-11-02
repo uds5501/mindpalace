@@ -58,6 +58,15 @@ Make the layout scannable, lightweight, and accessible with semantic HTML.
 | Methods tried | Pour over |
 | Tasting notes | Solid body, not sour, balanced |
 
+### SICC – Mooleh Manay Estate
+
+| Field | Value |
+|-------|-------|
+| Name | SICC – Mooleh Manay Estate |
+| First brewed | 2026-11-02 |
+| Methods tried | Moka pot (Agaro) |
+| Tasting notes | Plum, wine, red cherry, orange peel |
+
 ---
 
 ## Brew Log
@@ -95,3 +104,16 @@ Make the layout scannable, lightweight, and accessible with semantic HTML.
 **Tasting notes:** Really nice cup — solid body, wasn't sour. Clean and balanced.
 
 **Notes:** First brew with this coffee. Grind 20 (vs 22 on prior pour over) landed well — finer setting may have helped body without tipping into sourness.
+
+### 2026-11-02 — SICC Mooleh Manay Estate (Moka Pot)
+
+| Parameter | Value |
+|-----------|-------|
+| Coffee | SICC – Mooleh Manay Estate |
+| Roaster | Blue Tokai Coffee |
+| Method | Moka pot (Agaro) |
+| Dose | 20 g |
+
+**Tasting notes:** Plum, subtle winey notes, ripe red cherry, and a zesty orange peel finish.
+
+**Notes:** Brewed in an Agaro moka pot with 20 g coffee grounds.
