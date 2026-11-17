@@ -41,3 +41,77 @@ Assume at $t=0, x=5$.
 ## Cursor Stability
 - Improvement on top of read committed, basic idea is if a txn is reading / modifying certain object $x$, it'll hold a cursor to it. Until this cursor is held, another txn $B_*$ can't change these objects.
 - Helps prevent lost updates (by subsequent trxns.)
+
+## Snapshot Isolation
+- Each trxn ($A_*$) works on the state of database when the it started. If other trxn ($B_*$) starts after former has begun, it won't see any changes that trxn. does.
+- $A_w$ can change objects but it won't be shown to other trxns that concurrently began, only the trxns starting after commit time can see the changes.
+- If $B_w$ changes the same objects $A_w$ did (assuming $A_w$ committed earlier), $B-w$ will have to abort.
+- It won't be totally available (some nodes can't make progress in presense of network partition)
+- What the hell is **write skew**? 
+  - Technically, 2 transactions making independent decisions by reading a common value at the same point of time and end up changing 2 different values, out of which only one should've been changed
+  - Three accounts: $x=12, y=10, z=10$, $A_w$ and $B_w$ both read $x=\$12$, and if $x>10$, they are allowed to award $\$5$ $x$ to $y$ and $z$ respectively. At some time $t$ they both read $x=12$, and end up transferring, making end condition $x=\$2, y=\$15, z=\$15$, violating the if condition.
+- Other elements seems similar to read commited.
+
+## Repeatable Read
+- Everything else is same as lower levels, just adds the support to shut down fuzzy reads (a txn will read the receive value for an object later in the trxn as well)
+
+## Serializability
+- If a db is running multiple concurrent trxns, the final result should look like the individual trxns have been run in some order.
+- Gemini gave 2 ideas:
+  - 2 phase locking (pessimistic of sorts) - If $A_w$, $B_w$ reads same object, they both share the read lock, however if $A_w$ upgrades with write lock, $B_w$ can't progress and have to wait, forcing an order.
+  - Serializable Snapshot Isolation - Both transactions read it, however if $A_w$ commits first, it's found that $B_w$'s work is done on premise that certain condition was true earlier and is not true anymore, and hence it's aborted and retried again.
+- Not necessary to support real time ordering.
+
+## Strict Serializability
+- Trxns happening in a total ordering and consistent with the real-time ordering of the operations.
+- If operation A completes before operation B begins, then A should appear to precede B in the serialization order.
+- Multi object.
+
+----
+
+## Writes follow reads
+- Called session causalty.
+- In a single-node setup, this is handled automatically, the value comes in multi node replicated setups.
+- Ex: Replicas (Imagine there are 2 replicas, at $t=$, a user's balance is $x=\$500$ in replica1, and $x=\$0$ in replica 2 (it's lagging behind) and a status for a user could be STANDARD / VIP).
+  - Process $A$ sees replica 1, find out $x \ge \$500$ and wants to set the user status to VIP. It reads a **causal token/metadata** : `version={Replica1: {time_stamp/epoch}}`
+  - Due to load balancing, it ends up sending the status update to replica 2, the write is $status=VIP$ with the above mentioned token.
+  - Now, replica 2 *should not* apply the write until it has replicated the balance (i.e. satisfied the token), otherwise it'd seem that the user has been given VIP status even though the balance is $\$0$!
+
+## Monotonic Reads
+- If $B_r$ happens after $A_r$,then $B_r$ should observe all the writes that $A_r$ saw and shouldn't see the state of the objects prior that.
+- Applies on the reads happening on the *same process*, not different processes.
+
+## Monotonic Writes
+- If a txn does $A_w$ first, then $B_w$, then all the other processes observe the writes in that order.
+- Applies on writes by the same process, not diff processes.
+
+## Read your writes
+- If a txn does $A_w$, then a subsequent $B_r$ should read the effect of that.
+- Applies per process.
+
+## PRAM (Pipeline Random Access Memory)
+- To improve concurrency.
+- It enforces that any pair of writes executed by a single process are observed (everywhere) in the order the process executed them (basically monotonic write :) 
+- Writes from different processes may be observed in different orders.
+
+## Causal Consistency
+- Causal consistency can be thought of listing of elements in a _happens before_ sort of relationship.
+- Given example of `question: lunch?` and two participants responding `A: yes`, `B: no`. The ordering to questioner and responder could either look like `Q, A, B` or `Q, B, A` but NEVER `[A,B], Q` because `Q` was the reason other 2 exists.
+- Imagine it as a DAG, `A -> Q` and `B -> Q` as edges, you can traverse from either A / B  and reach the above ordering.
+- Real-time causal consistency eventually make all the participants agree to a single sequence.
+- Sticky available!
+
+## Sequential Consistency
+- Again, it talks about all the operations appearing to happen in some serial order and the order is consistent with the order of operations in the individual processes.
+- Head scratcher - how tf is it different from **Serializability?** (thanks gemini ig)
+
+| Property          | Sequential Consistency                                                                              | Serializability                                                  |
+|-------------------|-----------------------------------------------------------------------------------------------------|------------------------------------------------------------------|
+| Unit of execution | Single operation (a read / write) on a single object                                                | Multiple operations on multiple objects                          |
+| Per-process order | Each $A_r$ / $A_w$ operation is enforced to execute in the same order it was listed in the process. | The $A_r$ / $A_w$ operations can be reordered.                   |
+| Real-time?        | Process $B$ can lag Process $A$ by arbitary time                                                    | Trxn. $A_*$ starting after $B_*$ can be ordered to start before. |
+
+
+## Linearizable
+- Real time enforced version of sequential consistency. If some operation $B_*$ happens after $A_*$, logically $B_*$ will observe all the affects of $A_*$ and take place after $A_*$.
+- Single object model.
