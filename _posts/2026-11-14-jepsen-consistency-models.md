@@ -1,11 +1,11 @@
 ---
 layout: post
-title: "jepsen consistency-models distributed-systems databases"
+title: "Remembering Jepsen Consistency Models"
 date: 2026-11-14
-tags: jepsen consistency-models notes
+tags: jepsen consistency-models distributed-systems databases
 ---
 
-This adds no value over existing set of consistency models listed by [Jepsen](https://jepsen.io/consistency). This is more of a N2S to remind myself what they are (as I frequently get confused between them). 
+PS - This adds no value over existing set of consistency models listed by [Jepsen](https://jepsen.io/consistency). This is more of a N2S to remind myself what they are (as I frequently get confused between them). 
 
 ![jepsen.png]({{site.baseurl}}/assets/images/posts/2026-11-14-jepsen-consistency-models/jepsen.png)
 
@@ -31,25 +31,25 @@ Assume at $t=0, x=5$.
 - Everything equal to Read Uncommitted but DRs are not allowed either.
 
 ## Monotonic Atomic View
-- Tightens read-committed by ensuring that if a $B_*$ runs after $A_*$, it either observes all the affects of $A_*$ or none of it, it's not allowed to pick and choose. 
+- Tightens read-committed by ensuring that if a $B_\ast$ runs after $A_\ast$, it either observes all the effects of $A_\ast$ or none of it, it's not allowed to pick and choose.
 - Gemini helped with an example here:
-  - Assume 2 accounts, $x=\$100$, $y=\$50$, $A_w$ records a transaction of $\$25$ transfer in 2 steps. $t0: x-=25, t1: y += 25, t3: commit$.
-  - If $B_r$ needs to get sum of both accounts, it'll read both x & y. This is a logically wrong but legal read-committed $B_r$ reads $x$ at t < t1 ($x=100$) and then reads $y$ at t>t3 ($y=75$) so $x+y=175!$. Free money hack :P 
+  - Assume 2 accounts, `x = $100` and `y = $50`. $A_w$ records a transaction of `$25` transfer in 2 steps: `t0: x -= 25`, `t1: y += 25`, `t3: commit`.
+  - If $B_r$ needs to get sum of both accounts, it'll read both x & y. This is a logically wrong but legal read-committed read: $B_r$ reads $x$ at $t < t1$ ($x=100$) and then reads $y$ at $t > t3$ ($y=75$), so $x + y = 175$. Free money hack :P 
   - In monotonic atomic view, $B_r$ will either read both effects of $A_w$ or none, either way it'll amount to $x+y=150$ :)
 - Other elements are similar to Read committed.
 
 ## Cursor Stability
-- Improvement on top of read committed, basic idea is if a txn is reading / modifying certain object $x$, it'll hold a cursor to it. Until this cursor is held, another txn $B_*$ can't change these objects.
+- Improvement on top of read committed, basic idea is if a txn is reading / modifying certain object $x$, it'll hold a cursor to it. Until this cursor is held, another txn $B_\ast$ can't change these objects.
 - Helps prevent lost updates (by subsequent trxns.)
 
 ## Snapshot Isolation
-- Each trxn ($A_*$) works on the state of database when the it started. If other trxn ($B_*$) starts after former has begun, it won't see any changes that trxn. does.
+- Each trxn ($A_\ast$) works on the state of database when the it started. If other trxn ($B_\ast$) starts after former has begun, it won't see any changes that trxn. does.
 - $A_w$ can change objects but it won't be shown to other trxns that concurrently began, only the trxns starting after commit time can see the changes.
-- If $B_w$ changes the same objects $A_w$ did (assuming $A_w$ committed earlier), $B-w$ will have to abort.
+- If $B_w$ changes the same objects $A_w$ did (assuming $A_w$ committed earlier), $B_w$ will have to abort.
 - It won't be totally available (some nodes can't make progress in presense of network partition)
 - What the hell is **write skew**? 
   - Technically, 2 transactions making independent decisions by reading a common value at the same point of time and end up changing 2 different values, out of which only one should've been changed
-  - Three accounts: $x=12, y=10, z=10$, $A_w$ and $B_w$ both read $x=\$12$, and if $x>10$, they are allowed to award $\$5$ $x$ to $y$ and $z$ respectively. At some time $t$ they both read $x=12$, and end up transferring, making end condition $x=\$2, y=\$15, z=\$15$, violating the if condition.
+  - Three accounts: $x=12$, $y=10$, $z=10$. $A_w$ and $B_w$ both read `x = $12`, and if $x > 10$, they are allowed to award `$5` from $x$ to $y$ and $z$ respectively. At some time $t$ they both read $x=12$, and end up transferring, making end condition `x = $2`, `y = $15`, `z = $15`, violating the if condition.
 - Other elements seems similar to read commited.
 
 ## Repeatable Read
@@ -72,10 +72,10 @@ Assume at $t=0, x=5$.
 ## Writes follow reads
 - Called session causalty.
 - In a single-node setup, this is handled automatically, the value comes in multi node replicated setups.
-- Ex: Replicas (Imagine there are 2 replicas, at $t=$, a user's balance is $x=\$500$ in replica1, and $x=\$0$ in replica 2 (it's lagging behind) and a status for a user could be STANDARD / VIP).
-  - Process $A$ sees replica 1, find out $x \ge \$500$ and wants to set the user status to VIP. It reads a **causal token/metadata** : `version={Replica1: {time_stamp/epoch}}`
+- Ex: Replicas (Imagine there are 2 replicas, at $t=0$, a user's balance is `x = $500` in replica 1, and `x = $0` in replica 2 (it's lagging behind) and a status for a user could be STANDARD / VIP).
+  - Process $A$ sees replica 1, find out $x \ge 500$ and wants to set the user status to VIP. It reads a **causal token/metadata** : `version={Replica1: {time_stamp/epoch}}`
   - Due to load balancing, it ends up sending the status update to replica 2, the write is $status=VIP$ with the above mentioned token.
-  - Now, replica 2 *should not* apply the write until it has replicated the balance (i.e. satisfied the token), otherwise it'd seem that the user has been given VIP status even though the balance is $\$0$!
+  - Now, replica 2 *should not* apply the write until it has replicated the balance (i.e. satisfied the token), otherwise it'd seem that the user has been given VIP status even though the balance is `$0`!
 
 ## Monotonic Reads
 - If $B_r$ happens after $A_r$,then $B_r$ should observe all the writes that $A_r$ saw and shouldn't see the state of the objects prior that.
@@ -109,9 +109,9 @@ Assume at $t=0, x=5$.
 |-------------------|-----------------------------------------------------------------------------------------------------|------------------------------------------------------------------|
 | Unit of execution | Single operation (a read / write) on a single object                                                | Multiple operations on multiple objects                          |
 | Per-process order | Each $A_r$ / $A_w$ operation is enforced to execute in the same order it was listed in the process. | The $A_r$ / $A_w$ operations can be reordered.                   |
-| Real-time?        | Process $B$ can lag Process $A$ by arbitary time                                                    | Trxn. $A_*$ starting after $B_*$ can be ordered to start before. |
+| Real-time?        | Process $B$ can lag Process $A$ by arbitary time                                                    | Trxn. $A_\ast$ starting after $B_\ast$ can be ordered to start before. |
 
 
 ## Linearizable
-- Real time enforced version of sequential consistency. If some operation $B_*$ happens after $A_*$, logically $B_*$ will observe all the affects of $A_*$ and take place after $A_*$.
+- Real time enforced version of sequential consistency. If some operation $B_\ast$ happens after $A_\ast$, logically $B_\ast$ will observe all the effects of $A_\ast$ and take place after $A_\ast$.
 - Single object model.
